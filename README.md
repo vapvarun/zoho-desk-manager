@@ -1,21 +1,36 @@
 # Zoho Desk Manager for WordPress
 
-A professional WordPress plugin for managing Zoho Desk support tickets directly from your WordPress admin dashboard.
+[![WordPress Version](https://img.shields.io/badge/WordPress-5.0%2B-blue)](https://wordpress.org)
+[![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-purple)](https://php.net)
+[![License](https://img.shields.io/badge/License-GPL%20v2-green)](https://www.gnu.org/licenses/gpl-2.0.html)
+[![Version](https://img.shields.io/badge/Version-1.0.0-orange)](https://wbcomdesigns.com)
 
-## Features
+A professional WordPress plugin for managing Zoho Desk support tickets with AI-powered response generation directly from your WordPress admin dashboard.
 
-- **Real-Time Dashboard Widget**: Monitor tickets directly from WordPress dashboard
+## Key Features
+
+### Ticket Management
+- **Real-Time Dashboard**: Monitor tickets and statistics from WordPress dashboard
 - **OAuth 2.0 Authentication**: Secure connection to Zoho Desk API
-- **Ticket Management**: View, reply, and update ticket status
-- **Complete Conversation Threading**: Fetch all messages, replies, and comments
-- **Multi-Source Data Fetching**: Combines threads, conversations, and comments for complete ticket history
-- **Status Filtering**: Filter tickets by Open, On Hold, or Closed status
-- **Rich Text Editor**: Reply to tickets with formatted content
-- **Auto-Refresh**: Dashboard widget updates automatically every 60 seconds
-- **Priority Alerts**: Visual indicators for urgent and overdue tickets
-- **Browser Notifications**: Get alerts for urgent tickets (optional)
-- **Responsive Design**: Works seamlessly on all devices
-- **Debug Mode**: Built-in debugging tools for troubleshooting
+- **Complete Conversation History**: View all messages, replies, and agent responses
+- **Advanced Filtering**: Filter by status (Open, On Hold, Closed)
+- **Priority Indicators**: Visual alerts for urgent and overdue tickets
+- **Auto-Refresh**: Dashboard updates every 60 seconds
+
+### AI-Powered Response Generation
+- **Browser AI Mode**: Use existing ChatGPT Plus or Claude Pro subscriptions
+- **Direct API Integration**: Support for OpenAI, Claude, and Gemini APIs
+- **Full Context Awareness**: AI sees complete conversation history
+- **Multiple Response Types**: Solutions, follow-ups, clarifications, escalations
+- **Tone Control**: Professional, friendly, empathetic, or technical
+- **Draft Management**: Save, edit, and improve AI-generated responses
+
+### Developer Features
+- **WP-CLI Commands**: Batch process tickets from command line
+- **Rate Limiting**: Smart API call management
+- **Caching System**: Reduce API calls with intelligent caching
+- **Extensible Architecture**: Hooks and filters for customization
+- **Debug Mode**: Built-in tools for troubleshooting
 
 ## Requirements
 
