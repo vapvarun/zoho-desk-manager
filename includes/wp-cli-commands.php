@@ -188,36 +188,34 @@ class ZDM_CLI_Commands {
     /**
      * Manage tickets with various operations
      *
-     * ## SUBCOMMANDS
-     *
-     * ### list
-     * List tickets with filtering options
-     *
-     * ### show <ticket_id>
-     * Display detailed ticket information
-     *
-     * ### respond <ticket_id>
-     * Generate AI response for a ticket
-     *
-     * ### update <ticket_id>
-     * Update ticket status or properties
-     *
-     * ### tags <action>
-     * Manage ticket tags (list, show, add, remove, auto-tag)
-     *
      * ## OPTIONS
      *
+     * <action>
+     * : The action to perform: list, show, respond, update, tags
+     *
+     * [<ticket_id>]
+     * : Ticket ID (required for show, respond, update, and tags actions)
+     *
+     * [<args>...]
+     * : Additional arguments for specific actions (e.g., tags for tags action)
+     *
      * [--status=<status>]
-     * : Filter by ticket status (open, closed, on-hold)
+     * : Filter by ticket status: open, closed, on-hold
      *
      * [--priority=<priority>]
-     * : Filter by priority (low, normal, high, urgent)
+     * : Filter by priority: low, normal, high, urgent
      *
      * [--limit=<number>]
      * : Limit number of results (default: 20)
      *
      * [--format=<format>]
-     * : Output format (table, json, csv, yaml)
+     * : Output format: table, json, csv, yaml
+     *
+     * [--ai-provider=<provider>]
+     * : AI provider for respond action: claude, openai, gemini
+     *
+     * [--template=<template>]
+     * : Template to use for respond action
      *
      * ## EXAMPLES
      *
@@ -269,27 +267,22 @@ class ZDM_CLI_Commands {
     /**
      * Manage response templates
      *
-     * ## SUBCOMMANDS
-     *
-     * ### list
-     * List all available templates
-     *
-     * ### show <template_key>
-     * Display template details and content
-     *
-     * ### use <template_key> <ticket_id>
-     * Process template with ticket variables
-     *
-     * ### retag
-     * Re-analyze and update auto-tags for all templates
-     *
      * ## OPTIONS
      *
+     * <action>
+     * : The action to perform: list, show, use, retag
+     *
+     * [<template_key>]
+     * : Template key (required for show and use actions)
+     *
+     * [<ticket_id>]
+     * : Ticket ID (required for use action)
+     *
      * [--category=<category>]
-     * : Filter by template category
+     * : Filter by template category (for list action)
      *
      * [--format=<format>]
-     * : Output format (table, json, csv)
+     * : Output format: table, json, csv (default: table)
      *
      * ## EXAMPLES
      *
@@ -1216,9 +1209,17 @@ class ZDM_CLI_Commands {
     }
 }
 
-// Register commands
+// Register main commands
 WP_CLI::add_command('zoho-desk', 'ZDM_CLI_Commands');
 WP_CLI::add_command('zdm', 'ZDM_CLI_Commands');
 
+// Register individual subcommands for better discoverability
+WP_CLI::add_command('zdm analyze', array('ZDM_CLI_Commands', 'analyze'));
+WP_CLI::add_command('zdm ticket', array('ZDM_CLI_Commands', 'ticket'));
+WP_CLI::add_command('zdm template', array('ZDM_CLI_Commands', 'template'));
+WP_CLI::add_command('zdm monitor', array('ZDM_CLI_Commands', 'monitor'));
+WP_CLI::add_command('zdm stats', array('ZDM_CLI_Commands', 'stats'));
+
 // Add helpful aliases
 WP_CLI::add_command('zd', 'ZDM_CLI_Commands');
+WP_CLI::add_command('zd analyze', array('ZDM_CLI_Commands', 'analyze'));
