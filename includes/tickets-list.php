@@ -402,6 +402,10 @@ function zdm_single_ticket_view($api, $ticket_id) {
                             <span class="dashicons dashicons-admin-generic"></span>
                             Generate AI Draft
                         </button>
+                        <button type="button" id="zdm-use-template" class="button button-secondary">
+                            <span class="dashicons dashicons-format-aside"></span>
+                            Use Template
+                        </button>
                         <button type="button" id="zdm-load-saved-draft" class="button button-secondary">
                             <span class="dashicons dashicons-download"></span>
                             Load Saved Draft
@@ -450,6 +454,77 @@ function zdm_single_ticket_view($api, $ticket_id) {
                         <button type="button" id="zdm-cancel-ai-options" class="button">
                             Cancel
                         </button>
+                    </div>
+                </div>
+
+                <!-- Template Selection (shown when using templates) -->
+                <div id="zdm-template-options" style="display: none; margin-bottom: 15px; padding: 15px; background: white; border-radius: 3px;">
+                    <?php
+                    // Include template manager and get templates
+                    require_once ZDM_PLUGIN_PATH . 'includes/class-template-manager.php';
+                    $templates = ZDM_Template_Manager::get_templates();
+                    $categories = ZDM_Template_Manager::get_categories();
+                    $suggestions = ZDM_Template_Manager::suggest_templates($ticket, $threads);
+                    ?>
+
+                    <?php if (!empty($suggestions)): ?>
+                        <div style="margin-bottom: 15px; padding: 10px; background: #fffbcc; border-left: 4px solid #ffb900; border-radius: 3px;">
+                            <strong>💡 Suggested Templates:</strong>
+                            <div style="margin-top: 8px;">
+                                <?php foreach ($suggestions as $suggestion): ?>
+                                    <button type="button" class="button button-small zdm-template-suggestion"
+                                            data-template="<?php echo esc_attr($suggestion['key']); ?>"
+                                            style="margin-right: 8px; margin-bottom: 4px;">
+                                        <?php echo esc_html($suggestion['name']); ?>
+                                        <small style="opacity: 0.7;">(<?php echo esc_html($suggestion['reason']); ?>)</small>
+                                    </button>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <div style="display: grid; grid-template-columns: 200px 1fr; gap: 15px;">
+                        <div>
+                            <label for="zdm-template-category">Category:</label>
+                            <select id="zdm-template-category" style="width: 100%; padding: 8px; margin-bottom: 10px;">
+                                <option value="">All Categories</option>
+                                <?php foreach ($categories as $category): ?>
+                                    <option value="<?php echo esc_attr($category); ?>">
+                                        <?php echo esc_html(ucfirst($category)); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+
+                            <label for="zdm-template-select">Template:</label>
+                            <select id="zdm-template-select" style="width: 100%; padding: 8px;">
+                                <option value="">Select a template...</option>
+                                <?php foreach ($templates as $key => $template): ?>
+                                    <option value="<?php echo esc_attr($key); ?>"
+                                            data-category="<?php echo esc_attr($template['category']); ?>">
+                                        <?php echo esc_html($template['name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label>Preview:</label>
+                            <div id="zdm-template-preview" style="padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 3px; min-height: 100px; font-family: monospace; font-size: 12px; white-space: pre-wrap;">
+                                Select a template to see the preview...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <button type="button" id="zdm-use-selected-template" class="button button-primary" disabled>
+                            Use This Template
+                        </button>
+                        <button type="button" id="zdm-cancel-template" class="button">
+                            Cancel
+                        </button>
+                        <span style="margin-left: 15px; color: #666; font-size: 12px;">
+                            Variables like {customer_name} will be automatically replaced
+                        </span>
                     </div>
                 </div>
 

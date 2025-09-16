@@ -198,6 +198,122 @@ class ZDM_CLI_Commands {
     }
 
     /**
+     * Manage response templates
+     *
+     * ## OPTIONS
+     *
+     * <action>
+     * : Action to perform: list, show, use
+     *
+     * [<template_key>]
+     * : Template key (required for show and use actions)
+     *
+     * [<ticket_id>]
+     * : Ticket ID (required for use action)
+     *
+     * [--format=<format>]
+     * : Output format: table, json, yaml
+     * default: table
+     *
+     * ## EXAMPLES
+     *
+     *     # List all templates
+     *     wp zdm template list
+     *
+     *     # Show specific template
+     *     wp zdm template show password_reset
+     *
+     *     # Use template for ticket (generates content)
+     *     wp zdm template use greeting 233992000080219017
+     *
+     * @when after_wp_load
+     */
+    public function template($args, $assoc_args) {
+        if (empty($args[0])) {
+            WP_CLI::error("Please specify an action: list, show, or use");
+        }
+
+        $action = $args[0];
+        $format = WP_CLI\Utils\get_flag_value($assoc_args, 'format', 'table');
+
+        require_once ZDM_PLUGIN_PATH . 'includes/class-template-manager.php';
+
+        switch ($action) {
+            case 'list':
+                $templates = ZDM_Template_Manager::get_templates();
+                $output_data = array();
+
+                foreach ($templates as $key => $template) {
+                    $output_data[] = array(
+                        'Key' => $key,
+                        'Name' => $template['name'],
+                        'Category' => ucfirst($template['category']),
+                        'Variables' => count($template['variables'])
+                    );
+                }
+
+                if ($format === 'table') {
+                    WP_CLI\Utils\format_items('table', $output_data, array('Key', 'Name', 'Category', 'Variables'));
+                } else {
+                    WP_CLI\Utils\format_items($format, $output_data, array('Key', 'Name', 'Category', 'Variables'));
+                }
+                break;
+
+            case 'show':
+                if (empty($args[1])) {
+                    WP_CLI::error("Please specify a template key");
+                }
+
+                $template = ZDM_Template_Manager::get_template($args[1]);
+                if (!$template) {
+                    WP_CLI::error("Template '{$args[1]}' not found");
+                }
+
+                WP_CLI::line("Template: " . $template['name']);
+                WP_CLI::line("Category: " . ucfirst($template['category']));
+                WP_CLI::line("Variables: " . implode(', ', $template['variables']));
+                WP_CLI::line("");
+                WP_CLI::line("Content:");
+                WP_CLI::line("--------");
+                WP_CLI::line($template['content']);
+                break;
+
+            case 'use':
+                if (empty($args[1]) || empty($args[2])) {
+                    WP_CLI::error("Please specify template key and ticket ID");
+                }
+
+                $template_key = $args[1];
+                $ticket_id = $args[2];
+
+                // Get ticket data
+                $api = new ZDM_Zoho_API();
+                $ticket_data = $api->get_ticket($ticket_id);
+                $threads = $api->get_ticket_threads($ticket_id);
+
+                if (!$ticket_data) {
+                    WP_CLI::error("Unable to fetch ticket data for ID: $ticket_id");
+                }
+
+                // Extract variables and process template
+                $variables = ZDM_Template_Manager::extract_ticket_variables($ticket_data, $threads);
+                $content = ZDM_Template_Manager::process_template($template_key, $variables);
+
+                if ($content === false) {
+                    WP_CLI::error("Template '$template_key' not found");
+                }
+
+                WP_CLI::success("Template processed successfully:");
+                WP_CLI::line("");
+                WP_CLI::line($content);
+                break;
+
+            default:
+                WP_CLI::error("Unknown action: $action. Use list, show, or use");
+        }
+    }
+
+    /**
      * Test Zoho Desk API connection
      *
      * ## EXAMPLES
@@ -383,6 +499,16 @@ class ZDM_CLI_Commands {
                 'wp zoho-desk process --auto-save'
             ),
             array(
+                'search',
+                'Search for tickets by email/keyword',
+                'wp zd search "tanase@example.com"'
+            ),
+            array(
+                'template',
+                'Manage response templates',
+                'wp zd template list'
+            ),
+            array(
                 'drafts',
                 'View all saved drafts',
                 'wp zoho-desk drafts'
@@ -524,6 +650,8 @@ class ZDM_CLI_Commands {
 
         $commands = array(
             'process'         => 'Process tickets and generate AI draft responses',
+            'search'          => 'Search for tickets by email, keyword, ticket number, or URL',
+            'template'        => 'Manage response templates (list, show, use)',
             'drafts'          => 'View all saved draft responses',
             'stats'           => 'Display ticket statistics and metrics',
             'send-draft'      => 'Send a saved draft response to Zoho Desk',
@@ -560,16 +688,6 @@ class ZDM_CLI_Commands {
         WP_CLI::line("");
     }
 
-    /**
-     * Default command - show list of commands if no subcommand provided
-     *
-     * @when after_wp_load
-     */
-    public function __invoke($args, $assoc_args) {
-        if (empty($args)) {
-            $this->list_commands($args, $assoc_args);
-        }
-    }
 
     /**
      * Watch for new tickets and process them automatically

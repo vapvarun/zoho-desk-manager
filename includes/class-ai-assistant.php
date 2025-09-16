@@ -31,6 +31,8 @@ class ZDM_AI_Assistant {
         add_action('wp_ajax_zdm_generate_ai_response', array(__CLASS__, 'ajax_generate_response'));
         add_action('wp_ajax_zdm_improve_response', array(__CLASS__, 'ajax_improve_response'));
         add_action('wp_ajax_zdm_get_response_templates', array(__CLASS__, 'ajax_get_templates'));
+        add_action('wp_ajax_zdm_preview_template', array(__CLASS__, 'ajax_preview_template'));
+        add_action('wp_ajax_zdm_process_template', array(__CLASS__, 'ajax_process_template'));
     }
 
     /**
@@ -747,18 +749,100 @@ class ZDM_AI_Assistant {
     }
 
     /**
-     * Get response templates
+     * AJAX handler for template preview
      */
-    public static function get_response_templates() {
-        return array(
-            'greeting' => "Hi {customer_name},\n\nThank you for reaching out to us.",
-            'acknowledgment' => "I understand your concern regarding {issue}.",
-            'apology' => "I sincerely apologize for the inconvenience this has caused you.",
-            'solution' => "Here's how we can resolve this issue:\n\n1. [Step 1]\n2. [Step 2]\n3. [Step 3]",
-            'follow_up' => "I wanted to check in and see if the solution provided resolved your issue.",
-            'closing' => "Please don't hesitate to reach out if you need any further assistance.\n\nBest regards,",
-            'escalation' => "I've escalated this issue to our senior team who will be able to provide more specialized assistance."
-        );
+    public static function ajax_preview_template() {
+        check_ajax_referer('zdm_ai_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+
+        $template_key = sanitize_text_field($_POST['template_key']);
+        $ticket_id = sanitize_text_field($_POST['ticket_id']);
+
+        // Include template manager
+        require_once ZDM_PLUGIN_PATH . 'includes/class-template-manager.php';
+
+        // Get ticket data for variable extraction
+        $api = new ZDM_Zoho_API();
+        $ticket_data = $api->get_ticket($ticket_id);
+        $threads = $api->get_ticket_threads($ticket_id);
+
+        if (!$ticket_data) {
+            wp_send_json_error('Unable to fetch ticket data');
+            return;
+        }
+
+        // Extract variables from ticket
+        $variables = ZDM_Template_Manager::extract_ticket_variables($ticket_data, $threads);
+
+        // Get template
+        $template = ZDM_Template_Manager::get_template($template_key);
+
+        if (!$template) {
+            wp_send_json_error('Template not found');
+            return;
+        }
+
+        // Process template with variables for preview
+        $preview = $template['content'];
+        foreach ($variables as $key => $value) {
+            $preview = str_replace('{' . $key . '}', $value, $preview);
+        }
+
+        // Replace any remaining variables with defaults
+        $preview = ZDM_Template_Manager::process_template($template_key, $variables);
+
+        wp_send_json_success(array(
+            'preview' => $preview,
+            'template_name' => $template['name'],
+            'variables_used' => array_keys($variables)
+        ));
+    }
+
+    /**
+     * AJAX handler for processing template
+     */
+    public static function ajax_process_template() {
+        check_ajax_referer('zdm_ai_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Insufficient permissions');
+        }
+
+        $template_key = sanitize_text_field($_POST['template_key']);
+        $ticket_id = sanitize_text_field($_POST['ticket_id']);
+
+        // Include template manager
+        require_once ZDM_PLUGIN_PATH . 'includes/class-template-manager.php';
+
+        // Get ticket data for variable extraction
+        $api = new ZDM_Zoho_API();
+        $ticket_data = $api->get_ticket($ticket_id);
+        $threads = $api->get_ticket_threads($ticket_id);
+
+        if (!$ticket_data) {
+            wp_send_json_error('Unable to fetch ticket data');
+            return;
+        }
+
+        // Extract variables from ticket
+        $variables = ZDM_Template_Manager::extract_ticket_variables($ticket_data, $threads);
+
+        // Process template
+        $content = ZDM_Template_Manager::process_template($template_key, $variables);
+
+        if ($content === false) {
+            wp_send_json_error('Template not found or processing failed');
+            return;
+        }
+
+        wp_send_json_success(array(
+            'content' => $content,
+            'template_key' => $template_key,
+            'variables_replaced' => array_keys($variables)
+        ));
     }
 
     /**
@@ -771,7 +855,8 @@ class ZDM_AI_Assistant {
             wp_die('Insufficient permissions');
         }
 
-        $templates = self::get_response_templates();
+        // Use the new CPT-based template system
+        $templates = ZDM_Template_Manager::get_templates();
         wp_send_json_success($templates);
     }
 }

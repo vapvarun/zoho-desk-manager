@@ -35,12 +35,12 @@ require_once ZDM_PLUGIN_PATH . 'includes/class-dashboard-widget.php';
 require_once ZDM_PLUGIN_PATH . 'includes/class-ai-assistant.php';
 require_once ZDM_PLUGIN_PATH . 'includes/class-subscription-ai.php';
 require_once ZDM_PLUGIN_PATH . 'includes/class-browser-ai.php';
+require_once ZDM_PLUGIN_PATH . 'includes/class-template-manager.php';
 require_once ZDM_PLUGIN_PATH . 'includes/admin-menu.php';
 require_once ZDM_PLUGIN_PATH . 'includes/settings.php';
 require_once ZDM_PLUGIN_PATH . 'includes/ai-settings.php';
 require_once ZDM_PLUGIN_PATH . 'includes/tickets-list.php';
 require_once ZDM_PLUGIN_PATH . 'includes/help-page.php';
-require_once ZDM_PLUGIN_PATH . 'includes/api-test.php';
 
 // Include WP-CLI commands if available
 if (defined('WP_CLI') && WP_CLI) {
@@ -85,6 +85,9 @@ function zdm_init() {
 
     // Initialize AI Assistant
     ZDM_AI_Assistant::init();
+
+    // Initialize Template Manager
+    ZDM_Template_Manager::init();
 }
 
 // Add settings link on plugin page

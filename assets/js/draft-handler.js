@@ -26,6 +26,12 @@
                 self.showAIOptions();
             });
 
+            // Use Template button
+            $('#zdm-use-template').on('click', function(e) {
+                e.preventDefault();
+                self.showTemplateOptions();
+            });
+
             // Generate with options
             $('#zdm-generate-with-options').on('click', function(e) {
                 e.preventDefault();
@@ -36,6 +42,33 @@
             $('#zdm-cancel-ai-options').on('click', function(e) {
                 e.preventDefault();
                 self.hideAIOptions();
+            });
+
+            // Template event handlers
+            $('#zdm-cancel-template').on('click', function(e) {
+                e.preventDefault();
+                self.hideTemplateOptions();
+            });
+
+            $('#zdm-template-category').on('change', function() {
+                self.filterTemplatesByCategory($(this).val());
+            });
+
+            $('#zdm-template-select').on('change', function() {
+                self.previewTemplate($(this).val());
+            });
+
+            $('#zdm-use-selected-template').on('click', function(e) {
+                e.preventDefault();
+                self.useSelectedTemplate();
+            });
+
+            // Template suggestion clicks
+            $(document).on('click', '.zdm-template-suggestion', function(e) {
+                e.preventDefault();
+                var templateKey = $(this).data('template');
+                $('#zdm-template-select').val(templateKey);
+                self.previewTemplate(templateKey);
             });
 
             // Save draft
@@ -537,6 +570,117 @@
 
             // Auto-save
             this.saveDraft(true);
+        },
+
+        showTemplateOptions: function() {
+            $('#zdm-template-options').slideDown();
+            $('#zdm-use-template').prop('disabled', true);
+        },
+
+        hideTemplateOptions: function() {
+            $('#zdm-template-options').slideUp();
+            $('#zdm-use-template').prop('disabled', false);
+            $('#zdm-template-select').val('');
+            $('#zdm-template-preview').text('Select a template to see the preview...');
+            $('#zdm-use-selected-template').prop('disabled', true);
+        },
+
+        filterTemplatesByCategory: function(category) {
+            var $options = $('#zdm-template-select option');
+
+            $options.each(function() {
+                var $option = $(this);
+                var optionCategory = $option.data('category');
+
+                if (category === '' || optionCategory === category || $option.val() === '') {
+                    $option.show();
+                } else {
+                    $option.hide();
+                }
+            });
+
+            // Reset selection
+            $('#zdm-template-select').val('');
+            $('#zdm-template-preview').text('Select a template to see the preview...');
+            $('#zdm-use-selected-template').prop('disabled', true);
+        },
+
+        previewTemplate: function(templateKey) {
+            var self = this;
+
+            if (!templateKey) {
+                $('#zdm-template-preview').text('Select a template to see the preview...');
+                $('#zdm-use-selected-template').prop('disabled', true);
+                return;
+            }
+
+            // Get template content via AJAX
+            $.ajax({
+                url: zdm_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'zdm_preview_template',
+                    template_key: templateKey,
+                    ticket_id: self.ticketId,
+                    nonce: zdm_ajax.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $('#zdm-template-preview').text(response.data.preview);
+                        $('#zdm-use-selected-template').prop('disabled', false);
+                    } else {
+                        $('#zdm-template-preview').text('Error loading template preview');
+                        $('#zdm-use-selected-template').prop('disabled', true);
+                    }
+                },
+                error: function() {
+                    $('#zdm-template-preview').text('Error loading template preview');
+                    $('#zdm-use-selected-template').prop('disabled', true);
+                }
+            });
+        },
+
+        useSelectedTemplate: function() {
+            var self = this;
+            var templateKey = $('#zdm-template-select').val();
+
+            if (!templateKey) {
+                self.showStatus('Please select a template first', 'error');
+                return;
+            }
+
+            self.showLoading('Processing template...');
+
+            $.ajax({
+                url: zdm_ajax.ajax_url,
+                type: 'POST',
+                data: {
+                    action: 'zdm_process_template',
+                    template_key: templateKey,
+                    ticket_id: self.ticketId,
+                    nonce: zdm_ajax.nonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        // Insert template content into draft
+                        $('#zdm-draft-content').val(response.data.content);
+                        self.updateWordCount();
+                        self.hideTemplateOptions();
+                        self.showStatus('✓ Template applied successfully', 'success');
+
+                        // Auto-save the template
+                        self.saveDraft(true);
+                    } else {
+                        self.showStatus('Failed to process template: ' + response.data, 'error');
+                    }
+                },
+                error: function() {
+                    self.showStatus('Network error while processing template', 'error');
+                },
+                complete: function() {
+                    self.hideLoading();
+                }
+            });
         }
     };
 

@@ -244,86 +244,83 @@ class ZDM_Zoho_API {
             return false;
         }
 
-        // Build search parameters
-        $search_params = array();
+        $limit = isset($params['limit']) ? $params['limit'] : 50;
 
-        switch ($search_type) {
-            case 'email':
-                $search_params['email'] = $query;
-                break;
-            case 'subject':
-                $search_params['subject'] = $query;
-                break;
-            case 'content':
-                $search_params['searchStr'] = $query;
-                break;
-            case 'ticket_number':
-                $search_params['ticketNumber'] = $query;
-                break;
-            case 'all':
-            default:
-                // For 'all', we'll search in multiple ways
-                if (is_email($query)) {
-                    $search_params['email'] = $query;
-                } elseif (preg_match('/^#?\d+$/', $query)) {
-                    // Looks like a ticket number
-                    $search_params['ticketNumber'] = ltrim($query, '#');
-                } else {
-                    // General search in content
-                    $search_params['searchStr'] = $query;
-                }
-                break;
-        }
+        // Since Zoho Desk API search endpoints are limited/unavailable,
+        // use client-side filtering by fetching tickets and filtering locally
 
-        // Merge with additional parameters
-        $search_params = array_merge($search_params, $params);
+        // Fetch more tickets to ensure we find matches (use reasonable limit)
+        $fetch_limit = min(max($limit * 4, 50), 100); // Between 50 and 100 tickets
 
-        // Add default parameters
-        $defaults = array(
-            'limit' => 50,
+        // Get tickets from the regular endpoint
+        $tickets_data = $this->get_tickets(array(
+            'limit' => $fetch_limit,
             'sortBy' => 'createdTime'
-        );
-        $search_params = wp_parse_args($search_params, $defaults);
-
-        // Use search endpoint if available, otherwise filter regular tickets
-        $url = $this->api_base_url . '/tickets?' . http_build_query($search_params);
-
-        $response = wp_remote_get($url, array(
-            'headers' => array(
-                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
-                'orgId' => $org_id
-            ),
-            'timeout' => 30
         ));
 
-        if (!is_wp_error($response)) {
-            $code = wp_remote_retrieve_response_code($response);
-            if ($code == 200) {
-                $body = wp_remote_retrieve_body($response);
-                $data = json_decode($body, true);
-
-                // Cache search results for 5 minutes
-                $cache_key = 'zdm_search_' . md5($query . $search_type . serialize($params));
-                set_transient($cache_key, $data, 300);
-
-                return $data;
-            } else {
-                $this->log_error('Search API returned non-200 status', array(
-                    'endpoint' => 'search',
-                    'query' => $query,
-                    'status_code' => $code,
-                    'response' => wp_remote_retrieve_body($response)
-                ));
-            }
-        } else {
-            $this->log_error('Failed to search tickets', array(
-                'query' => $query,
-                'error' => $response->get_error_message()
-            ));
+        if (!$tickets_data || !isset($tickets_data['data'])) {
+            return false;
         }
 
-        return false;
+        $matched_tickets = array();
+
+        foreach ($tickets_data['data'] as $ticket) {
+            $match = false;
+
+            switch ($search_type) {
+                case 'email':
+                    $match = stripos($ticket['email'] ?? '', $query) !== false;
+                    break;
+                case 'subject':
+                    $match = stripos($ticket['subject'] ?? '', $query) !== false;
+                    break;
+                case 'content':
+                    $match = stripos($ticket['description'] ?? '', $query) !== false ||
+                            stripos($ticket['subject'] ?? '', $query) !== false;
+                    break;
+                case 'ticket_number':
+                    $ticket_num = ltrim($query, '#');
+                    $match = ($ticket['ticketNumber'] ?? '') == $ticket_num;
+                    break;
+                case 'all':
+                default:
+                    if (is_email($query)) {
+                        $match = stripos($ticket['email'] ?? '', $query) !== false;
+                    } elseif (preg_match('/^#?\d+$/', $query)) {
+                        $ticket_num = ltrim($query, '#');
+                        $match = ($ticket['ticketNumber'] ?? '') == $ticket_num;
+                    } else {
+                        // Search in subject, description, and email
+                        $match = stripos($ticket['subject'] ?? '', $query) !== false ||
+                                stripos($ticket['description'] ?? '', $query) !== false ||
+                                stripos($ticket['email'] ?? '', $query) !== false;
+                    }
+                    break;
+            }
+
+            if ($match) {
+                $matched_tickets[] = $ticket;
+
+                // Stop if we have enough results
+                if (count($matched_tickets) >= $limit) {
+                    break;
+                }
+            }
+        }
+
+        // Format the response similar to the regular tickets API
+        $search_results = array(
+            'data' => $matched_tickets,
+            'count' => count($matched_tickets)
+        );
+
+        // Cache search results for 5 minutes
+        $cache_key = 'zdm_search_' . md5($query . $search_type . serialize($params));
+        set_transient($cache_key, $search_results, 300);
+
+        return $search_results;
     }
+
 
     /**
      * Parse flexible ticket input (ID, URL, number)
