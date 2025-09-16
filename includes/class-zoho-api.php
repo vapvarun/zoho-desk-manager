@@ -234,6 +234,133 @@ class ZDM_Zoho_API {
     }
 
     /**
+     * Search tickets by query
+     */
+    public function search_tickets($query, $search_type = 'all', $params = array()) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id)) {
+            return false;
+        }
+
+        // Build search parameters
+        $search_params = array();
+
+        switch ($search_type) {
+            case 'email':
+                $search_params['email'] = $query;
+                break;
+            case 'subject':
+                $search_params['subject'] = $query;
+                break;
+            case 'content':
+                $search_params['searchStr'] = $query;
+                break;
+            case 'ticket_number':
+                $search_params['ticketNumber'] = $query;
+                break;
+            case 'all':
+            default:
+                // For 'all', we'll search in multiple ways
+                if (is_email($query)) {
+                    $search_params['email'] = $query;
+                } elseif (preg_match('/^#?\d+$/', $query)) {
+                    // Looks like a ticket number
+                    $search_params['ticketNumber'] = ltrim($query, '#');
+                } else {
+                    // General search in content
+                    $search_params['searchStr'] = $query;
+                }
+                break;
+        }
+
+        // Merge with additional parameters
+        $search_params = array_merge($search_params, $params);
+
+        // Add default parameters
+        $defaults = array(
+            'limit' => 50,
+            'sortBy' => 'createdTime'
+        );
+        $search_params = wp_parse_args($search_params, $defaults);
+
+        // Use search endpoint if available, otherwise filter regular tickets
+        $url = $this->api_base_url . '/tickets?' . http_build_query($search_params);
+
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id
+            ),
+            'timeout' => 30
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200) {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+
+                // Cache search results for 5 minutes
+                $cache_key = 'zdm_search_' . md5($query . $search_type . serialize($params));
+                set_transient($cache_key, $data, 300);
+
+                return $data;
+            } else {
+                $this->log_error('Search API returned non-200 status', array(
+                    'endpoint' => 'search',
+                    'query' => $query,
+                    'status_code' => $code,
+                    'response' => wp_remote_retrieve_body($response)
+                ));
+            }
+        } else {
+            $this->log_error('Failed to search tickets', array(
+                'query' => $query,
+                'error' => $response->get_error_message()
+            ));
+        }
+
+        return false;
+    }
+
+    /**
+     * Parse flexible ticket input (ID, URL, number)
+     */
+    public static function parse_ticket_input($input) {
+        $input = trim($input);
+
+        // Direct ticket ID (18 digits)
+        if (preg_match('/^\d{18}$/', $input)) {
+            return array('type' => 'id', 'value' => $input);
+        }
+
+        // Ticket number format (#1234 or 1234)
+        if (preg_match('/^#?(\d+)$/', $input, $matches)) {
+            return array('type' => 'number', 'value' => $matches[1]);
+        }
+
+        // Extract from Zoho URL
+        if (preg_match('/desk\.zoho\.com.*?(\d{18})/', $input, $matches)) {
+            return array('type' => 'id', 'value' => $matches[1]);
+        }
+
+        // Extract from email subject [#1234]
+        if (preg_match('/\[#(\d+)\]/', $input, $matches)) {
+            return array('type' => 'number', 'value' => $matches[1]);
+        }
+
+        // Check if it's an email
+        if (is_email($input)) {
+            return array('type' => 'email', 'value' => $input);
+        }
+
+        // Default to general search
+        return array('type' => 'search', 'value' => $input);
+    }
+
+    /**
      * Get single ticket details
      */
     public function get_ticket($ticket_id) {

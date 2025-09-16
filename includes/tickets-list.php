@@ -45,9 +45,17 @@ function zdm_tickets_page() {
         return;
     }
 
+    // Handle search
+    $search_query = isset($_GET['search']) ? sanitize_text_field($_GET['search']) : '';
+    $search_type = isset($_GET['search_type']) ? sanitize_text_field($_GET['search_type']) : 'all';
+
     // Get tickets
-    $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'Open';
-    $tickets_data = $api->get_tickets(array('status' => $status_filter));
+    if (!empty($search_query)) {
+        $tickets_data = $api->search_tickets($search_query, $search_type);
+    } else {
+        $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'Open';
+        $tickets_data = $api->get_tickets(array('status' => $status_filter));
+    }
     ?>
 
     <div class="wrap">
@@ -59,6 +67,46 @@ function zdm_tickets_page() {
             </div>
             <?php return; ?>
         <?php endif; ?>
+
+        <!-- Search Form -->
+        <div style="background: #f9f9f9; padding: 15px; border: 1px solid #ddd; border-radius: 4px; margin: 20px 0;">
+            <form method="get" action="">
+                <input type="hidden" name="page" value="zoho-desk-manager">
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <input type="text"
+                               name="search"
+                               value="<?php echo esc_attr($search_query); ?>"
+                               placeholder="Search tickets by email, keyword, ticket #, or URL..."
+                               style="width: 100%; padding: 8px;">
+                    </div>
+                    <div>
+                        <select name="search_type" style="padding: 8px;">
+                            <option value="all" <?php selected($search_type, 'all'); ?>>Smart Search</option>
+                            <option value="email" <?php selected($search_type, 'email'); ?>>Customer Email</option>
+                            <option value="subject" <?php selected($search_type, 'subject'); ?>>Subject</option>
+                            <option value="content" <?php selected($search_type, 'content'); ?>>Content</option>
+                            <option value="ticket_number" <?php selected($search_type, 'ticket_number'); ?>>Ticket Number</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button type="submit" class="button button-primary">🔍 Search</button>
+                        <?php if (!empty($search_query)): ?>
+                            <a href="?page=zoho-desk-manager" class="button">Clear</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </form>
+
+            <?php if (!empty($search_query)): ?>
+                <div style="margin-top: 10px; color: #666;">
+                    <strong>Search Results for:</strong> "<?php echo esc_html($search_query); ?>"
+                    <span style="font-size: 11px; background: #e1e1e1; padding: 2px 6px; border-radius: 3px;">
+                        <?php echo $search_type === 'all' ? 'Smart Search' : ucfirst($search_type); ?>
+                    </span>
+                </div>
+            <?php endif; ?>
+        </div>
 
         <!-- Status Filter -->
         <div style="margin: 20px 0;">

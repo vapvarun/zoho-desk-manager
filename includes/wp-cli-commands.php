@@ -115,6 +115,89 @@ class ZDM_CLI_Commands {
     }
 
     /**
+     * Search for tickets
+     *
+     * ## OPTIONS
+     *
+     * <query>
+     * : Search query (email, keyword, ticket number, or URL)
+     *
+     * [--type=<type>]
+     * : Search type: all, email, subject, content, ticket_number
+     * default: all
+     *
+     * [--limit=<number>]
+     * : Maximum number of results
+     * default: 10
+     *
+     * [--format=<format>]
+     * : Output format: table, json, csv
+     * default: table
+     *
+     * ## EXAMPLES
+     *
+     *     # Smart search (auto-detects email/number/content)
+     *     wp zdm search customer@example.com
+     *     wp zdm search "#1234"
+     *     wp zdm search "login problem"
+     *
+     *     # Specific search types
+     *     wp zdm search customer@example.com --type=email
+     *     wp zdm search "refund" --type=content --limit=20
+     *
+     *     # Output formats
+     *     wp zdm search "urgent" --format=json
+     *     wp zdm search customer@example.com --format=csv
+     *
+     * @when after_wp_load
+     */
+    public function search($args, $assoc_args) {
+        if (empty($args[0])) {
+            WP_CLI::error("Please provide a search query.");
+        }
+
+        $query = $args[0];
+        $type = WP_CLI\Utils\get_flag_value($assoc_args, 'type', 'all');
+        $limit = WP_CLI\Utils\get_flag_value($assoc_args, 'limit', 10);
+        $format = WP_CLI\Utils\get_flag_value($assoc_args, 'format', 'table');
+
+        WP_CLI::line("Searching for: \"$query\" (type: $type)");
+
+        $api = new ZDM_Zoho_API();
+        $results = $api->search_tickets($query, $type, array('limit' => $limit));
+
+        if (!$results || !isset($results['data'])) {
+            WP_CLI::warning("No tickets found or search failed.");
+            return;
+        }
+
+        $tickets = $results['data'];
+        WP_CLI::success(sprintf("Found %d ticket(s)", count($tickets)));
+
+        // Prepare data for output
+        $output_data = array();
+        foreach ($tickets as $ticket) {
+            $output_data[] = array(
+                'ID' => $ticket['id'],
+                'Number' => '#' . $ticket['ticketNumber'],
+                'Subject' => substr($ticket['subject'], 0, 50) . (strlen($ticket['subject']) > 50 ? '...' : ''),
+                'Status' => $ticket['status'],
+                'Priority' => $ticket['priority'] ?? 'Normal',
+                'Customer' => $ticket['email'] ?? $ticket['contactId'],
+                'Created' => date('M d, Y', strtotime($ticket['createdTime']))
+            );
+        }
+
+        if ($format === 'table') {
+            WP_CLI\Utils\format_items('table', $output_data, array('Number', 'Subject', 'Status', 'Priority', 'Customer', 'Created'));
+        } elseif ($format === 'json') {
+            WP_CLI::line(json_encode($output_data, JSON_PRETTY_PRINT));
+        } elseif ($format === 'csv') {
+            WP_CLI\Utils\format_items('csv', $output_data, array('ID', 'Number', 'Subject', 'Status', 'Priority', 'Customer', 'Created'));
+        }
+    }
+
+    /**
      * Test Zoho Desk API connection
      *
      * ## EXAMPLES

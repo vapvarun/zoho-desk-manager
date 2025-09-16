@@ -30,10 +30,18 @@
 
 *Nothing currently in progress*
 
+## ✅ COMPLETED FEATURES
+
+### Search Functionality (100% Done)
+- [x] **Smart search** - Auto-detects emails, ticket numbers, URLs
+- [x] **Search UI** - Form in admin with multiple search types
+- [x] **WP-CLI search** - `wp zdm search <query>` with format options
+- [x] **Flexible input** - Accepts URLs, ticket #, emails, keywords
+- [x] **Search caching** - 5-minute cache for search results
+
 ## ⏳ NEXT TO IMPLEMENT
 
-### Priority 1: Essential Features (Pick 1-3)
-- [ ] **Search tickets** by customer email or keyword
+### Priority 1: Essential Features (Pick 1-2)
 - [ ] **EDD customer data** display in ticket view
 - [ ] **Response templates** for common replies
 - [ ] **Auto-tagging** tickets based on content
