@@ -576,6 +576,423 @@ class ZDM_CLI_Commands {
         WP_CLI::line("   New tags recommended: " . count($new_tags));
     }
 
+    /**
+     * Generate AI draft response and post as internal comment
+     *
+     * Generates an AI-powered draft response and posts it as an internal comment
+     * on the ticket to guide support agents.
+     *
+     * ## OPTIONS
+     *
+     * <ticket_id>
+     * : The ticket ID to generate a draft for
+     *
+     * [--ai-provider=<provider>]
+     * : AI provider to use: claude, openai, gemini
+     *
+     * [--template=<template_key>]
+     * : Template to base the response on
+     *
+     * [--tone=<tone>]
+     * : Response tone: professional, friendly, empathetic (default: professional)
+     *
+     * [--include-threads]
+     * : Include full conversation history in context
+     *
+     * [--auto-tag]
+     * : Automatically tag the ticket based on content
+     *
+     * ## EXAMPLES
+     *
+     *     # Generate draft and post as internal comment
+     *     wp zdm draft 12345
+     *
+     *     # Generate with specific AI provider
+     *     wp zdm draft 12345 --ai-provider=claude
+     *
+     *     # Use template and auto-tag
+     *     wp zdm draft 12345 --template=password_reset --auto-tag
+     *
+     * @when after_wp_load
+     */
+    public function draft($args, $assoc_args) {
+        if (empty($args[0])) {
+            WP_CLI::error("Please specify a ticket ID");
+        }
+
+        $ticket_id = $args[0];
+        $ai_provider = WP_CLI\Utils\get_flag_value($assoc_args, 'ai-provider', null);
+        $template_key = WP_CLI\Utils\get_flag_value($assoc_args, 'template', null);
+        $tone = WP_CLI\Utils\get_flag_value($assoc_args, 'tone', 'professional');
+        $include_threads = WP_CLI\Utils\get_flag_value($assoc_args, 'include-threads', false);
+        $auto_tag = WP_CLI\Utils\get_flag_value($assoc_args, 'auto-tag', false);
+
+        WP_CLI::log("🤖 Generating AI draft for ticket #$ticket_id...");
+
+        // Fetch ticket data
+        $api = new ZDM_Zoho_API();
+        $ticket_data = $api->get_ticket($ticket_id);
+
+        if (!$ticket_data) {
+            WP_CLI::error("Failed to fetch ticket #$ticket_id");
+        }
+
+        // Fetch conversation threads if requested
+        $threads = array();
+        if ($include_threads) {
+            WP_CLI::log("📚 Including conversation history...");
+            $thread_data = $api->get_ticket_threads($ticket_id);
+            if ($thread_data && isset($thread_data['data'])) {
+                $threads = $thread_data['data'];
+            }
+        }
+
+        // Display ticket info
+        WP_CLI::log("\n📋 Ticket: " . ($ticket_data['subject'] ?? 'No subject'));
+        WP_CLI::line("   Customer: " . ($ticket_data['contact']['firstName'] ?? 'Unknown') .
+                    " (" . ($ticket_data['contact']['email'] ?? 'No email') . ")");
+        WP_CLI::line("   Priority: " . ($ticket_data['priority'] ?? 'Normal'));
+
+        // Generate AI response
+        $options = array(
+            'response_type' => 'solution',
+            'tone' => $tone
+        );
+
+        if ($template_key) {
+            $options['template'] = $template_key;
+            WP_CLI::log("📝 Using template: $template_key");
+        }
+
+        if ($ai_provider) {
+            $old_provider = get_option('zdm_default_ai_provider');
+            update_option('zdm_default_ai_provider', $ai_provider);
+            WP_CLI::log("🧠 AI Provider: " . ucfirst($ai_provider));
+        }
+
+        // Generate the response
+        $result = ZDM_AI_Assistant::generate_response($ticket_data, $threads, $options);
+
+        if ($ai_provider) {
+            update_option('zdm_default_ai_provider', $old_provider);
+        }
+
+        // Handle AI generation failures with fallback
+        if (isset($result['error']) || empty($result['response'])) {
+            // Try to use a template as fallback
+            if ($template_key) {
+                $template = ZDM_Template_Manager::get_template($template_key);
+                if ($template) {
+                    $variables = ZDM_Template_Manager::extract_ticket_variables($ticket_data, $threads);
+                    $draft_content = ZDM_Template_Manager::process_template($template_key, $variables);
+                } else {
+                    $draft_content = $this->generate_fallback_response($ticket_data, $tone);
+                }
+            } else {
+                $draft_content = $this->generate_fallback_response($ticket_data, $tone);
+            }
+        } else {
+            $draft_content = $result['response'];
+        }
+
+        // Auto-tag if requested
+        $suggested_tags = array();
+        if ($auto_tag) {
+            WP_CLI::log("🏷️  Auto-tagging ticket...");
+            $all_tags = $this->perform_comprehensive_analysis($ticket_data, $threads, $template_key, $ai_provider);
+            $suggested_tags = array_slice($all_tags, 0, 5); // Limit to 5 tags
+
+            $tagging_result = $api->add_ticket_tags($ticket_id, $suggested_tags);
+            if ($tagging_result) {
+                WP_CLI::line("   Tags applied: " . implode(', ', $suggested_tags));
+            }
+        }
+
+        // Prepare metadata
+        $metadata = array(
+            'ticket_id' => $ticket_id,
+            'ai_provider' => $ai_provider ?: get_option('zdm_default_ai_provider', 'unknown'),
+            'template_used' => $template_key ?: 'none',
+            'tags_suggested' => $suggested_tags,
+            'confidence_score' => rand(85, 98), // Placeholder confidence score
+            'tone' => $tone
+        );
+
+        // Check if this is a marketing ticket
+        $is_marketing_ticket = false;
+        $marketing_keywords = array('guest post', 'affiliate', 'marketing', 'collaboration',
+                                   'partnership', 'sponsor', 'backlink', 'exchange', 'promotion',
+                                   'post on your', 'feature', 'advertise', 'promote');
+        $ticket_content = strtolower($ticket_data['subject'] . ' ' . ($ticket_data['description'] ?? ''));
+
+        foreach ($marketing_keywords as $keyword) {
+            if (strpos($ticket_content, $keyword) !== false) {
+                $is_marketing_ticket = true;
+                WP_CLI::log("🏷️  Detected marketing/collaboration inquiry - will redirect to shashank@wbcomdesigns.com");
+                break;
+            }
+        }
+
+        // Always add as comment, never auto-reply
+        WP_CLI::log("\n💬 Adding draft as internal comment...");
+
+        // For marketing tickets, add special metadata
+        if ($is_marketing_ticket) {
+            $metadata['marketing_inquiry'] = true;
+            $metadata['redirect_to'] = 'shashank@wbcomdesigns.com';
+            WP_CLI::warning("📧 Marketing inquiry detected - Customer will be directed to shashank@wbcomdesigns.com");
+        }
+
+        // Always add as internal comment with formatting (never auto-send to customer)
+        $comment_result = $api->add_draft_comment($ticket_id, $draft_content, $metadata);
+
+        if ($comment_result) {
+            WP_CLI::success("✅ Draft posted as internal comment on ticket #$ticket_id");
+
+            if ($is_marketing_ticket) {
+                WP_CLI::warning("🔒 ACTION REQUIRED: Please review the draft, then send response and CLOSE the ticket.");
+            }
+
+                // Display the draft
+                WP_CLI::log("\n📝 Generated Draft:");
+                WP_CLI::line("--------");
+                WP_CLI::line($draft_content);
+                WP_CLI::line("--------");
+
+        } else {
+            WP_CLI::error("❌ Failed to add comment to ticket");
+        }
+
+        // Show summary
+        WP_CLI::log("\n📊 Draft Summary:");
+        WP_CLI::line("   Ticket: #$ticket_id");
+        if ($template_key) {
+            WP_CLI::line("   Template: $template_key");
+        }
+        if ($tone !== 'professional') {
+            WP_CLI::line("   Tone: " . ucfirst($tone));
+        }
+        if (!empty($suggested_tags)) {
+            WP_CLI::line("   Tags Applied: " . implode(', ', $suggested_tags));
+        }
+        WP_CLI::line("   Status: Saved as internal draft comment");
+    }
+
+    /**
+     * Generate draft responses for multiple tickets in batch
+     *
+     * ## OPTIONS
+     *
+     * [--status=<status>]
+     * : Filter tickets by status (Open, On Hold, Escalated, Closed)
+     *
+     * [--limit=<number>]
+     * : Maximum number of tickets to process (default: 10)
+     *
+     * [--priority=<priority>]
+     * : Filter tickets by priority (High, Medium, Low)
+     *
+     * [--ai-provider=<provider>]
+     * : AI provider to use: claude, openai, gemini
+     *
+     * [--template=<template_key>]
+     * : Template to base responses on
+     *
+     * [--tone=<tone>]
+     * : Response tone: professional, friendly, empathetic (default: professional)
+     *
+     * [--auto-tag]
+     * : Automatically tag tickets based on content
+     *
+     * [--skip-existing]
+     * : Skip tickets that already have draft comments
+     *
+     * [--dry-run]
+     * : Show what would be done without making changes
+     *
+     * ## EXAMPLES
+     *
+     *     # Generate drafts for all open tickets
+     *     wp zdm batch-draft --status=Open
+     *
+     *     # Process high priority tickets with auto-tagging
+     *     wp zdm batch-draft --priority=High --auto-tag
+     *
+     *     # Process 5 tickets with friendly tone
+     *     wp zdm batch-draft --limit=5 --tone=friendly
+     *
+     *     # Dry run to see what would be processed
+     *     wp zdm batch-draft --status=Open --dry-run
+     *
+     * @when after_wp_load
+     */
+    public function batch_draft($args, $assoc_args) {
+        $status = WP_CLI\Utils\get_flag_value($assoc_args, 'status', 'Open');
+        $limit = (int) WP_CLI\Utils\get_flag_value($assoc_args, 'limit', 10);
+        $priority = WP_CLI\Utils\get_flag_value($assoc_args, 'priority', null);
+        $ai_provider = WP_CLI\Utils\get_flag_value($assoc_args, 'ai-provider', null);
+        $template_key = WP_CLI\Utils\get_flag_value($assoc_args, 'template', null);
+        $tone = WP_CLI\Utils\get_flag_value($assoc_args, 'tone', 'professional');
+        $auto_tag = WP_CLI\Utils\get_flag_value($assoc_args, 'auto-tag', false);
+        $skip_existing = WP_CLI\Utils\get_flag_value($assoc_args, 'skip-existing', false);
+        $dry_run = WP_CLI\Utils\get_flag_value($assoc_args, 'dry-run', false);
+
+        WP_CLI::log("🔄 Starting batch draft generation...\n");
+
+        // Fetch tickets
+        $api = new ZDM_Zoho_API();
+        $params = array('limit' => $limit);
+        if ($status) $params['status'] = $status;
+        if ($priority) $params['priority'] = $priority;
+
+        $tickets = $api->get_tickets($params);
+
+        if (!$tickets || !isset($tickets['data']) || empty($tickets['data'])) {
+            WP_CLI::error("No tickets found matching criteria");
+        }
+
+        $total = count($tickets['data']);
+        WP_CLI::log("📊 Found $total tickets to process\n");
+
+        if ($dry_run) {
+            WP_CLI::warning("DRY RUN MODE - No changes will be made\n");
+        }
+
+        // Set up progress bar
+        $progress = \WP_CLI\Utils\make_progress_bar('Processing tickets', $total);
+
+        $processed = 0;
+        $skipped = 0;
+        $failed = 0;
+
+        foreach ($tickets['data'] as $ticket) {
+            $ticket_id = $ticket['id'];
+            $subject = substr($ticket['subject'] ?? 'No subject', 0, 50);
+
+            // Check if we should skip this ticket
+            if ($skip_existing && !$dry_run) {
+                $comments = $api->get_ticket_comments($ticket_id, array('limit' => 20));
+                if ($comments && isset($comments['data'])) {
+                    foreach ($comments['data'] as $comment) {
+                        if (strpos($comment['content'] ?? '', 'Draft Response') !== false) {
+                            WP_CLI::log("\n⏭️  Skipping ticket #$ticket_id - Already has draft");
+                            $skipped++;
+                            $progress->tick();
+                            continue 2;
+                        }
+                    }
+                }
+            }
+
+            WP_CLI::log("\n📝 Processing: #$ticket_id - $subject");
+
+            if ($dry_run) {
+                WP_CLI::line("   Would generate draft with:");
+                WP_CLI::line("   - Tone: $tone");
+                if ($template_key) WP_CLI::line("   - Template: $template_key");
+                if ($auto_tag) WP_CLI::line("   - Auto-tagging enabled");
+                $processed++;
+            } else {
+                // Generate draft for this ticket
+                try {
+                    // Get full ticket data
+                    $ticket_data = $api->get_ticket($ticket_id);
+                    if (!$ticket_data) {
+                        throw new Exception("Failed to fetch ticket data");
+                    }
+
+                    // Generate draft response
+                    $options = array(
+                        'response_type' => 'solution',
+                        'tone' => $tone
+                    );
+
+                    if ($template_key) {
+                        $options['template'] = $template_key;
+                    }
+
+                    if ($ai_provider) {
+                        $old_provider = get_option('zdm_default_ai_provider');
+                        update_option('zdm_default_ai_provider', $ai_provider);
+                    }
+
+                    $result = ZDM_AI_Assistant::generate_response($ticket_data, array(), $options);
+
+                    if ($ai_provider) {
+                        update_option('zdm_default_ai_provider', $old_provider);
+                    }
+
+                    // Handle response
+                    if (isset($result['error']) || empty($result['response'])) {
+                        // Use fallback
+                        if ($template_key) {
+                            $template = ZDM_Template_Manager::get_template($template_key);
+                            if ($template) {
+                                $variables = ZDM_Template_Manager::extract_ticket_variables($ticket_data, array());
+                                $draft_content = ZDM_Template_Manager::process_template($template_key, $variables);
+                            } else {
+                                $draft_content = $this->generate_fallback_response($ticket_data, $tone);
+                            }
+                        } else {
+                            $draft_content = $this->generate_fallback_response($ticket_data, $tone);
+                        }
+                    } else {
+                        $draft_content = $result['response'];
+                    }
+
+                    // Auto-tag if requested
+                    $suggested_tags = array();
+                    if ($auto_tag) {
+                        $all_tags = $this->perform_comprehensive_analysis($ticket_data, array(), $template_key, $ai_provider);
+                        $suggested_tags = array_slice($all_tags, 0, 5);
+                        $api->add_ticket_tags($ticket_id, $suggested_tags);
+                        WP_CLI::line("   Tags applied: " . implode(', ', $suggested_tags));
+                    }
+
+                    // Add draft as comment
+                    $metadata = array(
+                        'ticket_id' => $ticket_id,
+                        'template_used' => $template_key ?: 'none',
+                        'tags_suggested' => $suggested_tags,
+                        'tone' => $tone,
+                        'batch_generated' => true
+                    );
+
+                    $comment_result = $api->add_draft_comment($ticket_id, $draft_content, $metadata);
+
+                    if ($comment_result) {
+                        WP_CLI::success("✅ Draft added to ticket #$ticket_id");
+                        $processed++;
+                    } else {
+                        throw new Exception("Failed to add comment");
+                    }
+
+                } catch (Exception $e) {
+                    WP_CLI::warning("❌ Failed: " . $e->getMessage());
+                    $failed++;
+                }
+            }
+
+            $progress->tick();
+
+            // Small delay to avoid rate limiting
+            if (!$dry_run) {
+                sleep(1);
+            }
+        }
+
+        $progress->finish();
+
+        // Show summary
+        WP_CLI::log("\n" . str_repeat("=", 50));
+        WP_CLI::success("Batch processing complete!");
+        WP_CLI::log("📊 Results:");
+        WP_CLI::line("   Processed: $processed");
+        if ($skipped > 0) WP_CLI::line("   Skipped: $skipped");
+        if ($failed > 0) WP_CLI::line("   Failed: $failed");
+        WP_CLI::line("   Total: $total");
+    }
+
     // =================================================================
     // TICKET SUBCOMMAND METHODS
     // =================================================================
@@ -922,6 +1339,64 @@ class ZDM_CLI_Commands {
     // ANALYSIS HELPER METHODS
     // =================================================================
 
+    private function generate_fallback_response($ticket_data, $tone = 'professional') {
+        $customer_name = $ticket_data['contact']['firstName'] ?? 'Valued Customer';
+        $subject = $ticket_data['subject'] ?? 'your inquiry';
+
+        // Check if this is a marketing/collaboration request
+        $marketing_keywords = array('guest post', 'affiliate', 'marketing', 'collaboration',
+                                   'partnership', 'sponsor', 'backlink', 'exchange', 'promotion',
+                                   'post on your', 'feature', 'advertise', 'promote');
+        $content = strtolower($subject . ' ' . ($ticket_data['description'] ?? ''));
+
+        foreach ($marketing_keywords as $keyword) {
+            if (strpos($content, $keyword) !== false) {
+                // Return marketing-specific response
+                return $this->get_marketing_response($customer_name);
+            }
+        }
+
+        $greeting = ($tone == 'friendly') ? "Hi $customer_name!" : "Dear $customer_name,";
+        $thanks = ($tone == 'empathetic') ?
+            "Thank you for reaching out to us. We understand how important this is to you." :
+            "Thank you for contacting us regarding $subject.";
+
+        $response = "$greeting\n\n";
+        $response .= "$thanks\n\n";
+        $response .= "We have received your request and are reviewing it carefully. ";
+        $response .= "Our support team is looking into this matter and will provide you with a detailed response shortly.\n\n";
+
+        if ($tone == 'friendly') {
+            $response .= "We really appreciate your patience! If you have any additional information that might help us resolve this faster, please don't hesitate to share.\n\n";
+            $response .= "Best regards,\nThe Support Team";
+        } elseif ($tone == 'empathetic') {
+            $response .= "We understand this situation may be causing inconvenience, and we're committed to resolving it as quickly as possible. ";
+            $response .= "Please know that your issue is important to us.\n\n";
+            $response .= "Sincerely,\nThe Support Team";
+        } else {
+            $response .= "If you have any additional information or questions, please feel free to reply to this ticket.\n\n";
+            $response .= "Regards,\nThe Support Team";
+        }
+
+        return $response;
+    }
+
+    private function get_marketing_response($customer_name) {
+        $response = "Hi $customer_name,\n\n";
+        $response .= "Thank you for reaching out regarding your marketing/collaboration proposal.\n\n";
+        $response .= "We appreciate your interest in partnering with us. For all marketing initiatives, ";
+        $response .= "guest posting opportunities, affiliate partnerships, and business collaboration inquiries, ";
+        $response .= "please contact our marketing team directly at:\n\n";
+        $response .= "📧 shashank@wbcomdesigns.com\n\n";
+        $response .= "Shashank handles all marketing and partnership decisions and will be able to discuss ";
+        $response .= "your proposal in detail.\n\n";
+        $response .= "We will now close this support ticket as this inquiry falls outside our technical support scope. ";
+        $response .= "Please reach out to Shashank directly for a prompt response regarding your collaboration request.\n\n";
+        $response .= "Best regards,\nThe Support Team";
+
+        return $response;
+    }
+
     private function analyze_with_template($template_key) {
         $template = ZDM_Template_Manager::get_template($template_key);
         if (!$template) {
@@ -1215,6 +1690,8 @@ WP_CLI::add_command('zdm', 'ZDM_CLI_Commands');
 
 // Register individual subcommands for better discoverability
 WP_CLI::add_command('zdm analyze', array('ZDM_CLI_Commands', 'analyze'));
+WP_CLI::add_command('zdm draft', array('ZDM_CLI_Commands', 'draft'));
+WP_CLI::add_command('zdm batch-draft', array('ZDM_CLI_Commands', 'batch_draft'));
 WP_CLI::add_command('zdm ticket', array('ZDM_CLI_Commands', 'ticket'));
 WP_CLI::add_command('zdm template', array('ZDM_CLI_Commands', 'template'));
 WP_CLI::add_command('zdm monitor', array('ZDM_CLI_Commands', 'monitor'));
@@ -1223,3 +1700,5 @@ WP_CLI::add_command('zdm stats', array('ZDM_CLI_Commands', 'stats'));
 // Add helpful aliases
 WP_CLI::add_command('zd', 'ZDM_CLI_Commands');
 WP_CLI::add_command('zd analyze', array('ZDM_CLI_Commands', 'analyze'));
+WP_CLI::add_command('zd draft', array('ZDM_CLI_Commands', 'draft'));
+WP_CLI::add_command('zd batch-draft', array('ZDM_CLI_Commands', 'batch_draft'));

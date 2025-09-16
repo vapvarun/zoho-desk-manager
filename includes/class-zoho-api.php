@@ -488,42 +488,6 @@ class ZDM_Zoho_API {
         return false;
     }
 
-    /**
-     * Get ticket comments (alternative to conversations)
-     */
-    public function get_ticket_comments($ticket_id) {
-        $access_token = $this->get_access_token();
-        $org_id = get_option('zdm_org_id');
-
-        if (empty($access_token) || empty($org_id)) {
-            return false;
-        }
-
-        $url = $this->api_base_url . '/tickets/' . $ticket_id . '/comments';
-
-        $params = array(
-            'from' => 0,
-            'limit' => 100,
-            'sortBy' => 'commentedTime'
-        );
-
-        $url .= '?' . http_build_query($params);
-
-        $response = wp_remote_get($url, array(
-            'headers' => array(
-                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
-                'orgId' => $org_id
-            ),
-            'timeout' => 30
-        ));
-
-        if (!is_wp_error($response)) {
-            $body = wp_remote_retrieve_body($response);
-            return json_decode($body, true);
-        }
-
-        return false;
-    }
 
     /**
      * Get ticket history/timeline
@@ -628,6 +592,144 @@ class ZDM_Zoho_API {
         }
 
         return false;
+    }
+
+    /**
+     * Add a comment to a ticket (for internal draft/guidance)
+     */
+    public function add_ticket_comment($ticket_id, $content, $is_public = false) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id)) {
+            return false;
+        }
+
+        $url = $this->api_base_url . '/tickets/' . $ticket_id . '/comments';
+
+        $data = array(
+            'content' => $content,
+            'isPublic' => $is_public,
+            'contentType' => 'html'
+        );
+
+        $response = wp_remote_post($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id,
+                'Content-Type' => 'application/json'
+            ),
+            'body' => json_encode($data)
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200 || $code == 201) {
+                $body = wp_remote_retrieve_body($response);
+                return json_decode($body, true);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get all comments for a ticket
+     */
+    public function get_ticket_comments($ticket_id, $params = array()) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id)) {
+            return false;
+        }
+
+        $url = $this->api_base_url . '/tickets/' . $ticket_id . '/comments';
+
+        if (!empty($params)) {
+            $url .= '?' . http_build_query($params);
+        }
+
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id
+            )
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200) {
+                $body = wp_remote_retrieve_body($response);
+                return json_decode($body, true);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Add AI-generated draft as internal comment with formatting
+     */
+    public function add_draft_comment($ticket_id, $draft_content, $metadata = array()) {
+        // Format the draft with metadata
+        $formatted_content = $this->format_draft_comment($draft_content, $metadata);
+
+        // Add as internal comment (not visible to customers)
+        return $this->add_ticket_comment($ticket_id, $formatted_content, false);
+    }
+
+    /**
+     * Format draft comment with AI metadata and instructions
+     */
+    private function format_draft_comment($draft_content, $metadata = array()) {
+        $html = '<div style="border: 2px solid #4CAF50; padding: 15px; background: #f9f9f9; border-radius: 8px;">';
+        $html .= '<h3 style="color: #4CAF50; margin-top: 0;">📝 Draft Response</h3>';
+
+        // Add metadata section
+        if (!empty($metadata)) {
+            $html .= '<div style="background: #fff; padding: 10px; border-radius: 5px; margin-bottom: 15px;">';
+            if (isset($metadata['template_used']) && $metadata['template_used'] !== 'none') {
+                $html .= '<p style="margin: 5px 0;"><strong>Template:</strong> ' . $metadata['template_used'] . '</p>';
+            }
+
+            if (isset($metadata['tags_suggested']) && !empty($metadata['tags_suggested'])) {
+                $html .= '<p style="margin: 5px 0;"><strong>Suggested Tags:</strong> ' . implode(', ', $metadata['tags_suggested']) . '</p>';
+            }
+
+            if (isset($metadata['tone']) && $metadata['tone'] !== 'professional') {
+                $html .= '<p style="margin: 5px 0;"><strong>Tone:</strong> ' . ucfirst($metadata['tone']) . '</p>';
+            }
+
+            $html .= '</div>';
+        }
+
+        // Add instructions
+        $html .= '<div style="background: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 15px; border-left: 4px solid #ffc107;">';
+        $html .= '<p style="margin: 0;"><strong>Review Before Sending:</strong></p>';
+        $html .= '<ul style="margin: 5px 0 0 20px; padding: 0;">';
+        $html .= '<li>Personalize the response based on customer context</li>';
+        $html .= '<li>Verify all technical information and links</li>';
+        $html .= '<li>Add any additional information specific to this customer</li>';
+        $html .= '</ul>';
+        $html .= '</div>';
+
+        // Add the draft content
+        $html .= '<div style="background: #fff; padding: 15px; border-radius: 5px; border: 1px solid #ddd;">';
+        $html .= '<div style="white-space: pre-wrap; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif;">';
+        $html .= nl2br(htmlspecialchars($draft_content));
+        $html .= '</div>';
+        $html .= '</div>';
+
+
+        $html .= '</div>';
+
+        // Add timestamp
+        $html .= '<p style="margin-top: 10px; color: #999; font-size: 11px; text-align: right;">';
+        $html .= 'Draft created: ' . date('Y-m-d H:i:s');
+        $html .= '</p>';
+
+        return $html;
     }
 
     /**
