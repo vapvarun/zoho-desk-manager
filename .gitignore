@@ -1,0 +1,47 @@
+# Development and Documentation
+backup-docs/
+*.log
+*.tmp
+
+# WordPress specific
+.htaccess
+wp-config.php
+wp-content/uploads/
+wp-content/blogs.dir/
+wp-content/upgrade/
+wp-content/backup-db/
+wp-content/cache/
+wp-content/backups/
+
+# Plugin development
+node_modules/
+.sass-cache/
+*.min.js.map
+*.min.css.map
+
+# IDE and OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Build artifacts
+dist/
+build/
+vendor/
+composer.lock
+
+# Testing
+tests/tmp/
+tests/logs/
+phpunit.xml
+.phpunit.result.cache
