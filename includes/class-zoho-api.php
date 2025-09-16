@@ -629,4 +629,393 @@ class ZDM_Zoho_API {
 
         return false;
     }
+
+    /**
+     * Get all available tags in the organization
+     */
+    public function get_ticket_tags() {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id)) {
+            return false;
+        }
+
+        $url = $this->api_base_url . '/ticketTags';
+
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id
+            )
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200) {
+                $body = wp_remote_retrieve_body($response);
+                return json_decode($body, true);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get tags for a specific ticket
+     */
+    public function get_ticket_tags_by_id($ticket_id) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id)) {
+            return false;
+        }
+
+        $url = $this->api_base_url . '/tickets/' . $ticket_id . '/tags';
+
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id
+            )
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200) {
+                $body = wp_remote_retrieve_body($response);
+                return json_decode($body, true);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Add tags to a ticket
+     */
+    public function add_ticket_tags($ticket_id, $tags) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id) || empty($tags)) {
+            return false;
+        }
+
+        // Ensure tags is an array
+        if (!is_array($tags)) {
+            $tags = array($tags);
+        }
+
+        $url = $this->api_base_url . '/tickets/' . $ticket_id . '/tags';
+
+        $data = array(
+            'tagNames' => $tags
+        );
+
+        $response = wp_remote_post($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id,
+                'Content-Type' => 'application/json'
+            ),
+            'body' => json_encode($data)
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200 || $code == 201) {
+                $body = wp_remote_retrieve_body($response);
+                return json_decode($body, true);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Remove tags from a ticket
+     */
+    public function remove_ticket_tags($ticket_id, $tags) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id) || empty($tags)) {
+            return false;
+        }
+
+        // Ensure tags is an array
+        if (!is_array($tags)) {
+            $tags = array($tags);
+        }
+
+        $url = $this->api_base_url . '/tickets/' . $ticket_id . '/tags';
+
+        $data = array(
+            'tagNames' => $tags
+        );
+
+        $response = wp_remote_request($url, array(
+            'method' => 'DELETE',
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id,
+                'Content-Type' => 'application/json'
+            ),
+            'body' => json_encode($data)
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200 || $code == 204) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Replace all tags on a ticket with new tags
+     */
+    public function replace_ticket_tags($ticket_id, $tags) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id)) {
+            return false;
+        }
+
+        // Ensure tags is an array
+        if (!is_array($tags)) {
+            $tags = array($tags);
+        }
+
+        $url = $this->api_base_url . '/tickets/' . $ticket_id . '/tags';
+
+        $data = array(
+            'tagNames' => $tags
+        );
+
+        $response = wp_remote_request($url, array(
+            'method' => 'PUT',
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id,
+                'Content-Type' => 'application/json'
+            ),
+            'body' => json_encode($data)
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200) {
+                $body = wp_remote_retrieve_body($response);
+                return json_decode($body, true);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Search for tags by name
+     */
+    public function search_tags($search_term, $limit = 50) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id) || empty($search_term)) {
+            return false;
+        }
+
+        $url = $this->api_base_url . '/ticketTags/search';
+
+        $params = array(
+            'searchStr' => $search_term,
+            'limit' => $limit
+        );
+
+        $url .= '?' . http_build_query($params);
+
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id
+            )
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200) {
+                $body = wp_remote_retrieve_body($response);
+                return json_decode($body, true);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Auto-tag ticket based on template usage and content analysis
+     */
+    public function auto_tag_ticket($ticket_id, $template_key = null, $custom_tags = array()) {
+        $ticket_data = $this->get_ticket($ticket_id);
+        if (!$ticket_data) {
+            return false;
+        }
+
+        $suggested_tags = array();
+        $tag_scope = get_option('zdm_tag_scope', 'template_only');
+
+        // Add template-based tags if template was used
+        if ($template_key) {
+            $template = ZDM_Template_Manager::get_template($template_key);
+            if ($template) {
+                // Add template category as tag
+                if (!empty($template['category'])) {
+                    $suggested_tags[] = $template['category'];
+                }
+
+                // Add template auto-tags
+                $auto_tags = ZDM_Template_Manager::get_auto_tags($template['id']);
+                if (!empty($auto_tags)) {
+                    $suggested_tags = array_merge($suggested_tags, $auto_tags);
+                }
+            }
+        }
+
+        // Add content analysis tags based on scope setting
+        if ($tag_scope === 'content_analysis' || $tag_scope === 'full_analysis') {
+            $content_tags = $this->analyze_ticket_content($ticket_data);
+            $suggested_tags = array_merge($suggested_tags, $content_tags);
+        }
+
+        // Add priority and status tags for full analysis
+        if ($tag_scope === 'full_analysis') {
+            $status_tags = $this->analyze_ticket_metadata($ticket_data);
+            $suggested_tags = array_merge($suggested_tags, $status_tags);
+        }
+
+        // Add any custom tags
+        if (!empty($custom_tags)) {
+            $suggested_tags = array_merge($suggested_tags, $custom_tags);
+        }
+
+        // Remove duplicates and empty values
+        $suggested_tags = array_unique(array_filter($suggested_tags));
+
+        // Apply tags to ticket
+        if (!empty($suggested_tags)) {
+            return $this->add_ticket_tags($ticket_id, $suggested_tags);
+        }
+
+        return false;
+    }
+
+    /**
+     * Analyze ticket content to suggest appropriate tags
+     */
+    private function analyze_ticket_content($ticket_data) {
+        $content = strtolower($ticket_data['subject'] ?? '');
+        $content .= ' ' . strtolower($ticket_data['description'] ?? '');
+
+        $suggested_tags = array();
+
+        // Priority-based tags
+        $priority = strtolower($ticket_data['priority'] ?? '');
+        if ($priority === 'high' || $priority === 'urgent') {
+            $suggested_tags[] = 'urgent';
+        }
+
+        // Status-based tags
+        $status = strtolower($ticket_data['status'] ?? '');
+        if ($status === 'open') {
+            $suggested_tags[] = 'new';
+        } elseif ($status === 'in progress') {
+            $suggested_tags[] = 'in-progress';
+        }
+
+        // Content analysis patterns
+        $tag_patterns = array(
+            'billing' => array('payment', 'invoice', 'billing', 'refund', 'charge'),
+            'technical' => array('error', 'bug', 'not working', 'broken', 'crash'),
+            'account' => array('login', 'password', 'access', 'signin', 'account'),
+            'feature-request' => array('feature', 'enhancement', 'suggestion', 'improve'),
+            'question' => array('how to', 'how do', 'what is', 'explain', 'help with')
+        );
+
+        foreach ($tag_patterns as $tag => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (strpos($content, $pattern) !== false) {
+                    $suggested_tags[] = $tag;
+                    break;
+                }
+            }
+        }
+
+        return $suggested_tags;
+    }
+
+    /**
+     * Analyze ticket metadata (priority, status, etc.) for additional tags
+     */
+    private function analyze_ticket_metadata($ticket_data) {
+        $metadata_tags = array();
+
+        // Priority-based tags
+        $priority = strtolower($ticket_data['priority'] ?? '');
+        if ($priority === 'high' || $priority === 'urgent') {
+            $metadata_tags[] = 'high-priority';
+        } elseif ($priority === 'low') {
+            $metadata_tags[] = 'low-priority';
+        }
+
+        // Status-based tags
+        $status = strtolower($ticket_data['status'] ?? '');
+        if ($status === 'open') {
+            $metadata_tags[] = 'new-ticket';
+        } elseif (in_array($status, array('in progress', 'pending'))) {
+            $metadata_tags[] = 'in-progress';
+        } elseif ($status === 'closed') {
+            $metadata_tags[] = 'resolved';
+        }
+
+        // Department/Category based tags
+        if (!empty($ticket_data['department'])) {
+            $department = strtolower($ticket_data['department']);
+            $metadata_tags[] = 'dept-' . sanitize_title($department);
+        }
+
+        // Customer type based on contact info
+        if (isset($ticket_data['contact'])) {
+            $contact = $ticket_data['contact'];
+            if (!empty($contact['email'])) {
+                $email_domain = substr(strrchr($contact['email'], '@'), 1);
+                // Tag business emails
+                if (in_array($email_domain, array('gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'))) {
+                    $metadata_tags[] = 'personal-email';
+                } else {
+                    $metadata_tags[] = 'business-email';
+                }
+            }
+        }
+
+        // Time-based tags
+        $created_time = $ticket_data['createdTime'] ?? '';
+        if ($created_time) {
+            $created_date = new DateTime($created_time);
+            $now = new DateTime();
+            $diff = $now->diff($created_date);
+
+            if ($diff->h < 1) {
+                $metadata_tags[] = 'recent';
+            } elseif ($diff->d > 7) {
+                $metadata_tags[] = 'old-ticket';
+            }
+        }
+
+        return $metadata_tags;
+    }
 }

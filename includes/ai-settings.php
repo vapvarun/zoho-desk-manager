@@ -48,6 +48,10 @@ function zdm_register_ai_settings() {
     register_setting('zdm_ai_settings', 'zdm_ai_max_tokens');
     register_setting('zdm_ai_settings', 'zdm_ai_temperature');
     register_setting('zdm_ai_settings', 'zdm_ai_system_prompt');
+
+    // Auto-tagging settings
+    register_setting('zdm_ai_settings', 'zdm_auto_tag_tickets');
+    register_setting('zdm_ai_settings', 'zdm_tag_scope');
 }
 add_action('admin_init', 'zdm_register_ai_settings');
 
@@ -557,6 +561,56 @@ function zdm_ai_settings_page() {
                     </div>
                 </div>
             <?php endif; ?>
+
+            <!-- Auto-Tagging Settings -->
+            <h3>🏷️ Auto-Tagging Settings</h3>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">Auto-Tag Tickets</th>
+                    <td>
+                        <label>
+                            <input type="checkbox"
+                                   name="zdm_auto_tag_tickets"
+                                   value="1"
+                                   <?php checked(get_option('zdm_auto_tag_tickets', '1'), '1'); ?>>
+                            Automatically tag tickets in Zoho Desk when templates are used
+                        </label>
+                        <p class="description">
+                            When enabled, tickets will be automatically tagged based on the template used and content analysis.
+                            Tags include categories like "billing", "technical", "urgent", etc.
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">Tag Scope</th>
+                    <td>
+                        <label>
+                            <input type="radio"
+                                   name="zdm_tag_scope"
+                                   value="template_only"
+                                   <?php checked(get_option('zdm_tag_scope', 'template_only'), 'template_only'); ?>>
+                            Only template-based tags
+                        </label><br>
+                        <label>
+                            <input type="radio"
+                                   name="zdm_tag_scope"
+                                   value="content_analysis"
+                                   <?php checked(get_option('zdm_tag_scope', 'template_only'), 'content_analysis'); ?>>
+                            Template tags + content analysis
+                        </label><br>
+                        <label>
+                            <input type="radio"
+                                   name="zdm_tag_scope"
+                                   value="full_analysis"
+                                   <?php checked(get_option('zdm_tag_scope', 'template_only'), 'full_analysis'); ?>>
+                            Full analysis (template + content + priority + status)
+                        </label>
+                        <p class="description">
+                            Choose how comprehensive the auto-tagging should be.
+                        </p>
+                    </td>
+                </tr>
+            </table>
 
             <?php submit_button('Save Settings'); ?>
         </form>

@@ -275,3 +275,108 @@ function zdm_ajax_load_draft() {
         wp_send_json_error('No draft found');
     }
 }
+
+// AJAX handler for re-tagging templates
+add_action('wp_ajax_zdm_retag_template', 'zdm_ajax_retag_template');
+function zdm_ajax_retag_template() {
+    check_ajax_referer('zdm_retag_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_die('Insufficient permissions');
+    }
+
+    $template_id = intval($_POST['template_id']);
+
+    if (empty($template_id)) {
+        wp_send_json_error('Invalid template ID');
+    }
+
+    // Re-run auto-tagging for this template
+    ZDM_Template_Manager::auto_tag_template($template_id);
+
+    wp_send_json_success('Template re-tagged successfully');
+}
+
+// AJAX handler for auto-tagging Zoho tickets
+add_action('wp_ajax_zdm_auto_tag_ticket', 'zdm_ajax_auto_tag_ticket');
+function zdm_ajax_auto_tag_ticket() {
+    check_ajax_referer('zdm_ai_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_die('Insufficient permissions');
+    }
+
+    $ticket_id = sanitize_text_field($_POST['ticket_id']);
+    $template_key = sanitize_text_field($_POST['template_key'] ?? '');
+    $custom_tags = array_filter(array_map('sanitize_text_field', $_POST['custom_tags'] ?? array()));
+
+    if (empty($ticket_id)) {
+        wp_send_json_error('Invalid ticket ID');
+    }
+
+    $api = new ZDM_Zoho_API();
+    $result = $api->auto_tag_ticket($ticket_id, $template_key, $custom_tags);
+
+    if ($result) {
+        wp_send_json_success(array(
+            'message' => 'Ticket tagged successfully',
+            'tags_applied' => $result
+        ));
+    } else {
+        wp_send_json_error('Failed to tag ticket');
+    }
+}
+
+// AJAX handler for getting ticket tags
+add_action('wp_ajax_zdm_get_ticket_tags', 'zdm_ajax_get_ticket_tags');
+function zdm_ajax_get_ticket_tags() {
+    check_ajax_referer('zdm_ai_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_die('Insufficient permissions');
+    }
+
+    $ticket_id = sanitize_text_field($_POST['ticket_id']);
+
+    if (empty($ticket_id)) {
+        wp_send_json_error('Invalid ticket ID');
+    }
+
+    $api = new ZDM_Zoho_API();
+    $tags = $api->get_ticket_tags_by_id($ticket_id);
+
+    if ($tags !== false) {
+        wp_send_json_success($tags);
+    } else {
+        wp_send_json_error('Failed to fetch ticket tags');
+    }
+}
+
+// AJAX handler for manually adding tags to tickets
+add_action('wp_ajax_zdm_add_ticket_tags', 'zdm_ajax_add_ticket_tags');
+function zdm_ajax_add_ticket_tags() {
+    check_ajax_referer('zdm_ai_nonce', 'nonce');
+
+    if (!current_user_can('manage_options')) {
+        wp_die('Insufficient permissions');
+    }
+
+    $ticket_id = sanitize_text_field($_POST['ticket_id']);
+    $tags = array_filter(array_map('sanitize_text_field', $_POST['tags'] ?? array()));
+
+    if (empty($ticket_id) || empty($tags)) {
+        wp_send_json_error('Missing ticket ID or tags');
+    }
+
+    $api = new ZDM_Zoho_API();
+    $result = $api->add_ticket_tags($ticket_id, $tags);
+
+    if ($result) {
+        wp_send_json_success(array(
+            'message' => 'Tags added successfully',
+            'result' => $result
+        ));
+    } else {
+        wp_send_json_error('Failed to add tags to ticket');
+    }
+}

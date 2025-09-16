@@ -838,10 +838,24 @@ class ZDM_AI_Assistant {
             return;
         }
 
+        // Auto-tag the ticket in Zoho Desk based on template usage
+        $auto_tag_enabled = get_option('zdm_auto_tag_tickets', '1') === '1';
+        $tags_applied = array();
+
+        if ($auto_tag_enabled) {
+            $api = new ZDM_Zoho_API();
+            $tagging_result = $api->auto_tag_ticket($ticket_id, $template_key);
+            if ($tagging_result) {
+                $tags_applied = $tagging_result;
+            }
+        }
+
         wp_send_json_success(array(
             'content' => $content,
             'template_key' => $template_key,
-            'variables_replaced' => array_keys($variables)
+            'variables_replaced' => array_keys($variables),
+            'auto_tagging_enabled' => $auto_tag_enabled,
+            'tags_applied' => $tags_applied
         ));
     }
 

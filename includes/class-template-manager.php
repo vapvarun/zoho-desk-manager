@@ -152,6 +152,15 @@ class ZDM_Template_Manager {
             'side',
             'default'
         );
+
+        add_meta_box(
+            'zdm_template_auto_tags',
+            'Auto-Generated Tags',
+            array(__CLASS__, 'auto_tags_meta_box'),
+            self::POST_TYPE,
+            'side',
+            'default'
+        );
     }
 
     /**
@@ -207,6 +216,64 @@ class ZDM_Template_Manager {
     }
 
     /**
+     * Auto-generated tags meta box content
+     */
+    public static function auto_tags_meta_box($post) {
+        $auto_tags = self::get_auto_tags($post->ID);
+        $auto_tagged_at = get_post_meta($post->ID, '_zdm_auto_tagged_at', true);
+
+        if (!empty($auto_tags)) {
+            echo '<p><strong>Auto-detected tags:</strong></p>';
+            echo '<div style="margin-bottom: 10px;">';
+            foreach ($auto_tags as $tag) {
+                $tag_name = ucwords(str_replace('-', ' ', $tag));
+                echo '<span style="display: inline-block; background: #f0f0f1; padding: 2px 8px; margin: 2px; border-radius: 3px; font-size: 11px;">' . esc_html($tag_name) . '</span>';
+            }
+            echo '</div>';
+
+            if ($auto_tagged_at) {
+                echo '<p><small><strong>Last analyzed:</strong> ' . date('M j, Y g:i a', strtotime($auto_tagged_at)) . '</small></p>';
+            }
+        } else {
+            echo '<p>No auto-tags detected yet.</p>';
+        }
+
+        echo '<p><small>Tags are automatically generated based on template content, keywords, and category.</small></p>';
+
+        // Add button to re-run auto-tagging
+        echo '<button type="button" id="zdm-retag-template" class="button button-small" data-template-id="' . $post->ID . '">Re-analyze Tags</button>';
+
+        // Add some JavaScript for the retag button
+        ?>
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('#zdm-retag-template').on('click', function(e) {
+                e.preventDefault();
+                var button = $(this);
+                var templateId = button.data('template-id');
+
+                button.prop('disabled', true).text('Analyzing...');
+
+                $.post(ajaxurl, {
+                    action: 'zdm_retag_template',
+                    template_id: templateId,
+                    nonce: '<?php echo wp_create_nonce('zdm_retag_nonce'); ?>'
+                }, function(response) {
+                    if (response.success) {
+                        location.reload(); // Refresh to show new tags
+                    } else {
+                        alert('Error: ' + response.data);
+                    }
+                }).always(function() {
+                    button.prop('disabled', false).text('Re-analyze Tags');
+                });
+            });
+        });
+        </script>
+        <?php
+    }
+
+    /**
      * Save template meta data
      */
     public static function save_template_meta($post_id) {
@@ -236,6 +303,9 @@ class ZDM_Template_Manager {
         if (isset($_POST['zdm_keywords'])) {
             update_post_meta($post_id, '_zdm_keywords', sanitize_textarea_field($_POST['zdm_keywords']));
         }
+
+        // Auto-tagging based on template content
+        self::auto_tag_template($post_id);
     }
 
     /**
@@ -691,8 +761,177 @@ Best regards,
 
             // Mark as default template
             update_post_meta($post_id, '_zdm_is_default', true);
+
+            // Auto-tag the default template
+            self::auto_tag_template($post_id);
         }
 
         return $post_id;
+    }
+
+    /**
+     * Auto-tag template based on content analysis
+     */
+    public static function auto_tag_template($post_id) {
+        $post = get_post($post_id);
+        if (!$post) {
+            return;
+        }
+
+        // Get content for analysis
+        $content = strtolower($post->post_content . ' ' . $post->post_title . ' ' . $post->post_excerpt);
+        $keywords = get_post_meta($post_id, '_zdm_keywords', true) ?: '';
+        $content .= ' ' . strtolower($keywords);
+
+        // Define tag mapping based on content patterns
+        $tag_patterns = array(
+            // Intent-based tags
+            'greeting' => array('hello', 'hi', 'thank you for', 'welcome', 'reaching out'),
+            'closing' => array('best regards', 'sincerely', 'thank you', 'further assistance', 'don\'t hesitate'),
+            'apology' => array('apologize', 'sorry', 'inconvenience', 'regret'),
+            'escalation' => array('escalat', 'senior', 'specialist', 'manager', 'supervisor'),
+            'follow-up' => array('follow up', 'check in', 'update', 'progress', 'status'),
+
+            // Issue type tags
+            'password' => array('password', 'login', 'signin', 'access', 'authentication'),
+            'billing' => array('billing', 'payment', 'invoice', 'charge', 'refund', 'subscription'),
+            'technical' => array('error', 'bug', 'not working', 'broken', 'crash', 'issue'),
+            'download' => array('download', 'file', 'zip', 'install', 'software'),
+            'license' => array('license', 'activation', 'expired', 'key', 'renewal'),
+            'account' => array('account', 'profile', 'settings', 'email', 'username'),
+
+            // Tone tags
+            'formal' => array('please find', 'we would like', 'kindly', 'we appreciate'),
+            'friendly' => array('happy to help', 'glad to assist', 'here to help', 'excited'),
+            'urgent' => array('immediately', 'asap', 'urgent', 'priority', 'critical'),
+
+            // Response type tags
+            'solution' => array('solution', 'resolve', 'fix', 'steps', 'instructions'),
+            'information' => array('information', 'details', 'explain', 'clarify', 'understand'),
+            'confirmation' => array('confirm', 'verified', 'completed', 'processed', 'done'),
+
+            // Customer type tags
+            'new-customer' => array('new customer', 'welcome', 'getting started', 'first time'),
+            'returning' => array('valued customer', 'appreciate your', 'continued'),
+            'premium' => array('premium', 'enterprise', 'business', 'professional'),
+
+            // Product area tags
+            'feature-request' => array('feature', 'enhancement', 'suggestion', 'improve'),
+            'documentation' => array('documentation', 'guide', 'tutorial', 'instructions'),
+            'integration' => array('integration', 'api', 'connect', 'sync', 'third-party')
+        );
+
+        $detected_tags = array();
+
+        // Analyze content against patterns
+        foreach ($tag_patterns as $tag => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (strpos($content, $pattern) !== false) {
+                    $detected_tags[] = $tag;
+                    break; // Only add tag once per category
+                }
+            }
+        }
+
+        // Add category-based tags
+        $category = self::get_template_category($post_id);
+        if ($category && $category !== 'general') {
+            $detected_tags[] = $category;
+        }
+
+        // Add sentiment tags based on tone analysis
+        $sentiment_tags = self::analyze_template_sentiment($content);
+        $detected_tags = array_merge($detected_tags, $sentiment_tags);
+
+        // Remove duplicates and apply tags
+        $detected_tags = array_unique($detected_tags);
+
+        if (!empty($detected_tags)) {
+            // Create tags that don't exist
+            foreach ($detected_tags as $tag_slug) {
+                if (!term_exists($tag_slug, self::TAG_TAXONOMY)) {
+                    $tag_name = ucwords(str_replace('-', ' ', $tag_slug));
+                    wp_insert_term($tag_name, self::TAG_TAXONOMY, array('slug' => $tag_slug));
+                }
+            }
+
+            // Apply tags to template
+            wp_set_post_terms($post_id, $detected_tags, self::TAG_TAXONOMY, false);
+
+            // Log auto-tagging for debugging
+            update_post_meta($post_id, '_zdm_auto_tags', $detected_tags);
+            update_post_meta($post_id, '_zdm_auto_tagged_at', current_time('mysql'));
+        }
+    }
+
+    /**
+     * Analyze template sentiment for additional tags
+     */
+    private static function analyze_template_sentiment($content) {
+        $sentiment_tags = array();
+
+        // Positive sentiment indicators
+        $positive_patterns = array('excited', 'happy', 'pleased', 'delighted', 'wonderful', 'excellent');
+        foreach ($positive_patterns as $pattern) {
+            if (strpos($content, $pattern) !== false) {
+                $sentiment_tags[] = 'positive';
+                break;
+            }
+        }
+
+        // Empathetic sentiment indicators
+        $empathy_patterns = array('understand', 'appreciate', 'realize', 'acknowledge', 'sympathize');
+        foreach ($empathy_patterns as $pattern) {
+            if (strpos($content, $pattern) !== false) {
+                $sentiment_tags[] = 'empathetic';
+                break;
+            }
+        }
+
+        // Professional sentiment indicators
+        $professional_patterns = array('professional', 'business', 'formal', 'official');
+        foreach ($professional_patterns as $pattern) {
+            if (strpos($content, $pattern) !== false) {
+                $sentiment_tags[] = 'professional';
+                break;
+            }
+        }
+
+        // Action-oriented indicators
+        $action_patterns = array('will', 'shall', 'steps', 'process', 'procedure');
+        foreach ($action_patterns as $pattern) {
+            if (strpos($content, $pattern) !== false) {
+                $sentiment_tags[] = 'action-oriented';
+                break;
+            }
+        }
+
+        return $sentiment_tags;
+    }
+
+    /**
+     * Get auto-generated tags for a template
+     */
+    public static function get_auto_tags($post_id) {
+        return get_post_meta($post_id, '_zdm_auto_tags', true) ?: array();
+    }
+
+    /**
+     * Manually trigger auto-tagging for existing templates
+     */
+    public static function retag_all_templates() {
+        $templates = get_posts(array(
+            'post_type' => self::POST_TYPE,
+            'post_status' => 'publish',
+            'numberposts' => -1
+        ));
+
+        $tagged_count = 0;
+        foreach ($templates as $template) {
+            self::auto_tag_template($template->ID);
+            $tagged_count++;
+        }
+
+        return $tagged_count;
     }
 }
