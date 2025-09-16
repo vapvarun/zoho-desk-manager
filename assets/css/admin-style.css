@@ -1,0 +1,377 @@
+/**
+ * Zoho Desk Manager Admin Styles
+ */
+
+/* Main wrapper */
+.zdm-wrapper {
+    max-width: 1200px;
+    margin: 20px 0;
+}
+
+/* Status badges */
+.zdm-status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.zdm-status-open {
+    background: #d4f4dd;
+    color: #1e7e34;
+}
+
+.zdm-status-onhold {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.zdm-status-closed {
+    background: #f0f0f0;
+    color: #666;
+}
+
+/* Priority badges */
+.zdm-priority-high {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+.zdm-priority-medium {
+    color: #ffc107;
+}
+
+.zdm-priority-low {
+    color: #28a745;
+}
+
+/* Ticket table */
+.zdm-tickets-table {
+    background: white;
+    border: 1px solid #ddd;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.zdm-tickets-table th {
+    background: #f5f5f5;
+    font-weight: 600;
+}
+
+/* Ticket detail */
+.zdm-ticket-detail {
+    background: white;
+    padding: 20px;
+    margin: 20px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.zdm-ticket-info {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    padding: 15px;
+    background: #f9f9f9;
+    border-radius: 4px;
+    margin: 20px 0;
+}
+
+.zdm-ticket-info-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.zdm-ticket-info-label {
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
+
+.zdm-ticket-info-value {
+    font-size: 14px;
+    color: #333;
+}
+
+/* Conversation thread */
+.zdm-conversation {
+    margin: 15px 0;
+    padding: 20px;
+    border-radius: 5px;
+    position: relative;
+}
+
+.zdm-conversation-customer {
+    background: #f0f8ff;
+    border-left: 4px solid #0073aa;
+}
+
+.zdm-conversation-support {
+    background: #f5f5f5;
+    border-left: 4px solid #666;
+}
+
+.zdm-conversation-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(0,0,0,0.1);
+}
+
+.zdm-conversation-author {
+    font-weight: 600;
+    color: #333;
+}
+
+.zdm-conversation-meta {
+    font-size: 12px;
+    color: #666;
+}
+
+.zdm-conversation-content {
+    line-height: 1.6;
+    color: #333;
+}
+
+/* Labels */
+.zdm-label {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    margin-left: 5px;
+}
+
+.zdm-label-support {
+    background: #28a745;
+    color: white;
+}
+
+.zdm-label-internal {
+    background: #ffb900;
+    color: white;
+}
+
+.zdm-label-api {
+    background: #17a2b8;
+    color: white;
+}
+
+/* Reply form */
+.zdm-reply-form {
+    background: #f6f7f7;
+    padding: 20px;
+    border-radius: 4px;
+    margin-top: 30px;
+}
+
+/* Quick actions */
+.zdm-quick-actions {
+    background: white;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-top: 20px;
+}
+
+/* Loading spinner */
+.zdm-loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #0073aa;
+    border-radius: 50%;
+    animation: zdm-spin 1s linear infinite;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+@keyframes zdm-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Settings page */
+.zdm-settings-section {
+    background: white;
+    padding: 20px;
+    margin: 20px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.zdm-connection-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.zdm-connected {
+    background: #d4f4dd;
+    color: #1e7e34;
+}
+
+.zdm-disconnected {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* Notices */
+.zdm-notice {
+    padding: 10px 15px;
+    margin: 15px 0;
+    border-radius: 4px;
+    border-left: 4px solid;
+}
+
+.zdm-notice-success {
+    background: #d4f4dd;
+    border-color: #28a745;
+    color: #1e7e34;
+}
+
+.zdm-notice-error {
+    background: #f8d7da;
+    border-color: #dc3545;
+    color: #721c24;
+}
+
+.zdm-notice-info {
+    background: #d1ecf1;
+    border-color: #17a2b8;
+    color: #0c5460;
+}
+
+/* Draft Section Styles */
+#zdm-draft-section {
+    background: #e8f4f8;
+    border: 2px solid #0073aa;
+    border-radius: 5px;
+    padding: 20px;
+    margin: 30px 0;
+}
+
+#zdm-draft-content {
+    width: 100%;
+    padding: 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    background: white;
+    resize: vertical;
+}
+
+#zdm-draft-content:focus {
+    outline: none;
+    border-color: #0073aa;
+    box-shadow: 0 0 0 1px #0073aa;
+}
+
+#zdm-draft-status {
+    background: white;
+    padding: 10px;
+    border-radius: 3px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#zdm-ai-options {
+    background: white;
+    padding: 15px;
+    border-radius: 3px;
+    border: 1px solid #e0e0e0;
+}
+
+#zdm-ai-suggestions {
+    background: #fff9e6;
+    border-left: 4px solid #ffb900;
+    padding: 15px;
+    border-radius: 3px;
+    margin-top: 15px;
+}
+
+.zdm-suggestions-list li {
+    margin: 5px 0;
+    line-height: 1.5;
+}
+
+#zdm-draft-actions {
+    display: flex;
+    gap: 10px;
+}
+
+#zdm-draft-actions .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+#zdm-draft-actions .dashicons {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.zdm-improve-type {
+    margin: 2px;
+}
+
+/* Loading spinner for draft section */
+#zdm-draft-section .spinner {
+    float: none;
+    margin: 0 5px;
+}
+
+/* Draft meta box animations */
+#zdm-draft-section {
+    transition: all 0.3s ease;
+}
+
+#zdm-draft-section.processing {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+/* AI Options Grid */
+#zdm-ai-options select {
+    width: 100%;
+}
+
+/* Word counter */
+#zdm-draft-word-count {
+    font-size: 12px;
+    color: #666;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .zdm-ticket-info {
+        grid-template-columns: 1fr;
+    }
+
+    .zdm-conversation-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .zdm-conversation-meta {
+        margin-top: 5px;
+    }
+
+    #zdm-draft-actions {
+        flex-wrap: wrap;
+    }
+
+    #zdm-ai-options > div {
+        grid-template-columns: 1fr;
+    }
+}
