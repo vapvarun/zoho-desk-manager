@@ -637,6 +637,53 @@ class ZDM_CLI_Commands {
             WP_CLI::error("Failed to fetch ticket #$ticket_id");
         }
 
+        // Get customer history for context
+        $customer_context = array();
+        $customer_email = $ticket_data['email'] ?? $ticket_data['contact']['email'] ?? null;
+
+        if ($customer_email) {
+            WP_CLI::log("📚 Loading customer history for context...");
+            $customer_data = $api->get_customer_tickets($customer_email, array('limit' => 10));
+
+            if ($customer_data && isset($customer_data['data'])) {
+                $customer_tickets = $customer_data['data'];
+                $customer_stats = $customer_data['stats'] ?? array();
+
+                // Build context summary
+                $customer_context['total_tickets'] = count($customer_tickets);
+                $customer_context['is_new_customer'] = count($customer_tickets) <= 1;
+                $customer_context['has_open_tickets'] = $customer_stats['open_tickets'] ?? 0;
+
+                // Check for repeat issues
+                $current_subject = strtolower($ticket_data['subject'] ?? '');
+                $similar_tickets = array();
+
+                foreach ($customer_tickets as $old_ticket) {
+                    if ($old_ticket['id'] !== $ticket_id) {
+                        $similarity = similar_text($current_subject, strtolower($old_ticket['subject'] ?? ''), $percent);
+                        if ($percent > 50) {
+                            $similar_tickets[] = $old_ticket;
+                        }
+                    }
+                }
+
+                $customer_context['has_similar_issues'] = !empty($similar_tickets);
+                $customer_context['previous_subjects'] = array_map(function($t) {
+                    return $t['subject'] ?? '';
+                }, array_slice($customer_tickets, 0, 5));
+
+                // Display context
+                if ($customer_context['is_new_customer']) {
+                    WP_CLI::line("   🆕 New customer - first ticket");
+                } else {
+                    WP_CLI::line("   📊 Customer has " . $customer_context['total_tickets'] . " total tickets");
+                    if ($customer_context['has_similar_issues']) {
+                        WP_CLI::warning("   🔄 Customer has reported similar issues before");
+                    }
+                }
+            }
+        }
+
         // Fetch conversation threads if requested
         $threads = array();
         if ($include_threads) {
@@ -686,10 +733,10 @@ class ZDM_CLI_Commands {
                     $variables = ZDM_Template_Manager::extract_ticket_variables($ticket_data, $threads);
                     $draft_content = ZDM_Template_Manager::process_template($template_key, $variables);
                 } else {
-                    $draft_content = $this->generate_fallback_response($ticket_data, $tone);
+                    $draft_content = $this->generate_fallback_response($ticket_data, $tone, $customer_context);
                 }
             } else {
-                $draft_content = $this->generate_fallback_response($ticket_data, $tone);
+                $draft_content = $this->generate_fallback_response($ticket_data, $tone, $customer_context);
             }
         } else {
             $draft_content = $result['response'];
@@ -776,6 +823,333 @@ class ZDM_CLI_Commands {
             WP_CLI::line("   Tags Applied: " . implode(', ', $suggested_tags));
         }
         WP_CLI::line("   Status: Saved as internal draft comment");
+    }
+
+    /**
+     * Get customer history and context
+     *
+     * ## OPTIONS
+     *
+     * <identifier>
+     * : Customer email address or ticket ID to lookup
+     *
+     * [--format=<format>]
+     * : Output format: table, json, summary, detailed (default: summary)
+     *
+     * [--limit=<number>]
+     * : Maximum number of tickets to retrieve (default: 20)
+     *
+     * [--include-closed]
+     * : Include closed tickets in the history
+     *
+     * [--show-patterns]
+     * : Analyze and show customer behavior patterns
+     *
+     * ## EXAMPLES
+     *
+     *     # Get customer history by email
+     *     wp zdm customer john@example.com
+     *
+     *     # Get customer history from ticket ID
+     *     wp zdm customer 123456
+     *
+     *     # Get detailed history with patterns
+     *     wp zdm customer john@example.com --format=detailed --show-patterns
+     *
+     *     # Export as JSON for analysis
+     *     wp zdm customer john@example.com --format=json > customer-data.json
+     *
+     * @when after_wp_load
+     * @alias history
+     */
+    public function customer($args, $assoc_args) {
+        if (empty($args[0])) {
+            WP_CLI::error("Please specify a customer email or ticket ID");
+        }
+
+        $identifier = $args[0];
+        $format = WP_CLI\Utils\get_flag_value($assoc_args, 'format', 'summary');
+        $limit = (int) WP_CLI\Utils\get_flag_value($assoc_args, 'limit', 20);
+        $include_closed = WP_CLI\Utils\get_flag_value($assoc_args, 'include-closed', false);
+        $show_patterns = WP_CLI\Utils\get_flag_value($assoc_args, 'show-patterns', false);
+
+        $api = new ZDM_Zoho_API();
+
+        // If identifier looks like a ticket ID, get customer from ticket
+        $customer_email = null;
+        $customer_name = null;
+        $customer_id = null;
+
+        if (strpos($identifier, '@') === false) {
+            // It's a ticket ID - get customer info from ticket
+            WP_CLI::log("📋 Looking up ticket #$identifier...");
+            $ticket = $api->get_ticket($identifier);
+
+            if (!$ticket) {
+                WP_CLI::error("Ticket not found: $identifier");
+            }
+
+            // Try different fields for customer info
+            $customer_email = $ticket['email'] ?? $ticket['contact']['email'] ?? null;
+            $customer_name = $ticket['contact']['firstName'] ?? 'Unknown';
+            $customer_id = $ticket['contact']['id'] ?? $ticket['contactId'] ?? null;
+
+            // If we have email in the main ticket field, extract name from it
+            if ($customer_email && $customer_name === 'Unknown') {
+                $email_parts = explode('@', $customer_email);
+                $customer_name = ucfirst(str_replace('.', ' ', $email_parts[0]));
+            }
+
+            if (!$customer_email && !$customer_id) {
+                WP_CLI::error("No customer information found in ticket");
+            }
+        } else {
+            // It's an email
+            $customer_email = $identifier;
+        }
+
+        // Fetch customer tickets
+        WP_CLI::log("🔍 Fetching customer history...\n");
+
+        $params = array('limit' => $limit);
+        if (!$include_closed) {
+            $params['status'] = 'Open,On Hold,Escalated';
+        }
+
+        $result = $api->get_customer_tickets($customer_id ?: $customer_email, $params);
+
+        // If no results with regular fetch, try search API for email
+        if ((!$result || !isset($result['data']) || empty($result['data'])) && $customer_email) {
+            WP_CLI::log("📡 Searching extended database...");
+            $search_result = $api->search_tickets($customer_email, 'email', $limit);
+
+            if ($search_result && isset($search_result['data'])) {
+                $result = $search_result;
+                // Calculate stats for search results
+                if (!empty($result['data'])) {
+                    $stats = $api->calculate_customer_stats($result['data']);
+                    $result['stats'] = $stats;
+                }
+            }
+        }
+
+        if (!$result || !isset($result['data'])) {
+            WP_CLI::error("Failed to fetch customer history");
+        }
+
+        $tickets = $result['data'];
+        $stats = $result['stats'] ?? array();
+
+        // Get customer name from first ticket if not already set
+        if (!$customer_name && !empty($tickets)) {
+            $customer_name = $tickets[0]['contact']['firstName'] ?? 'Customer';
+        }
+
+        // Display based on format
+        switch ($format) {
+            case 'json':
+                WP_CLI::line(json_encode($result, JSON_PRETTY_PRINT));
+                break;
+
+            case 'table':
+                $this->display_customer_table($tickets);
+                break;
+
+            case 'detailed':
+                $this->display_customer_detailed($customer_name, $customer_email, $tickets, $stats, $show_patterns);
+                break;
+
+            case 'summary':
+            default:
+                $this->display_customer_summary($customer_name, $customer_email, $tickets, $stats, $show_patterns);
+                break;
+        }
+    }
+
+    private function display_customer_summary($name, $email, $tickets, $stats, $show_patterns = false) {
+        WP_CLI::log("👤 Customer Profile");
+        WP_CLI::line("   Name: $name");
+        WP_CLI::line("   Email: $email");
+        WP_CLI::line("");
+
+        // Statistics
+        WP_CLI::log("📊 Statistics");
+        WP_CLI::line("   Total Tickets: " . $stats['total_tickets']);
+        WP_CLI::line("   Open/Active: " . $stats['open_tickets']);
+        WP_CLI::line("   Closed: " . $stats['closed_tickets']);
+
+        if ($stats['average_resolution_time'] > 0) {
+            WP_CLI::line("   Avg Resolution: " . $stats['average_resolution_time'] . " hours");
+        }
+
+        if ($stats['first_ticket_date']) {
+            $days_as_customer = (time() - strtotime($stats['first_ticket_date'])) / 86400;
+            WP_CLI::line("   Customer Since: " . date('Y-m-d', strtotime($stats['first_ticket_date'])) .
+                        " (" . round($days_as_customer) . " days)");
+        }
+
+        // Top categories
+        if (!empty($stats['categories'])) {
+            WP_CLI::line("\n📁 Top Categories:");
+            arsort($stats['categories']);
+            foreach (array_slice($stats['categories'], 0, 3) as $cat => $count) {
+                WP_CLI::line("   • $cat: $count tickets");
+            }
+        }
+
+        // Recent tickets
+        WP_CLI::log("\n🎫 Recent Tickets");
+        foreach (array_slice($tickets, 0, 5) as $ticket) {
+            $status_emoji = $this->get_status_emoji($ticket['status']);
+            $date = date('Y-m-d', strtotime($ticket['createdTime']));
+            WP_CLI::line("   $status_emoji #{$ticket['id']} - " .
+                        substr($ticket['subject'] ?? 'No subject', 0, 50) .
+                        " ($date)");
+        }
+
+        // Patterns analysis
+        if ($show_patterns) {
+            $this->analyze_customer_patterns($tickets, $stats);
+        }
+    }
+
+    private function display_customer_detailed($name, $email, $tickets, $stats, $show_patterns = false) {
+        $this->display_customer_summary($name, $email, $tickets, $stats, false);
+
+        // Detailed ticket list
+        WP_CLI::log("\n📝 Complete Ticket History");
+        WP_CLI::line(str_repeat("-", 80));
+
+        foreach ($tickets as $ticket) {
+            $status_emoji = $this->get_status_emoji($ticket['status']);
+            WP_CLI::log("\n$status_emoji Ticket #{$ticket['id']}");
+            WP_CLI::line("   Subject: " . ($ticket['subject'] ?? 'No subject'));
+            WP_CLI::line("   Status: " . $ticket['status']);
+            WP_CLI::line("   Priority: " . ($ticket['priority'] ?? 'Normal'));
+            WP_CLI::line("   Created: " . date('Y-m-d H:i', strtotime($ticket['createdTime'])));
+
+            if ($ticket['status'] === 'Closed' && !empty($ticket['closedTime'])) {
+                $resolution_time = (strtotime($ticket['closedTime']) - strtotime($ticket['createdTime'])) / 3600;
+                WP_CLI::line("   Closed: " . date('Y-m-d H:i', strtotime($ticket['closedTime'])) .
+                            " (Resolved in " . round($resolution_time, 1) . " hours)");
+            }
+
+            if (!empty($ticket['description'])) {
+                WP_CLI::line("   Preview: " . substr(strip_tags($ticket['description']), 0, 100) . "...");
+            }
+        }
+
+        if ($show_patterns) {
+            $this->analyze_customer_patterns($tickets, $stats);
+        }
+    }
+
+    private function display_customer_table($tickets) {
+        $table_data = array();
+        foreach ($tickets as $ticket) {
+            $table_data[] = array(
+                'ID' => $ticket['id'],
+                'Subject' => substr($ticket['subject'] ?? 'No subject', 0, 40),
+                'Status' => $ticket['status'],
+                'Priority' => $ticket['priority'] ?? 'Normal',
+                'Created' => date('Y-m-d', strtotime($ticket['createdTime']))
+            );
+        }
+
+        WP_CLI\Utils\format_items('table', $table_data,
+            array('ID', 'Subject', 'Status', 'Priority', 'Created'));
+    }
+
+    private function analyze_customer_patterns($tickets, $stats) {
+        WP_CLI::log("\n🔮 Customer Patterns & Insights");
+        WP_CLI::line(str_repeat("-", 50));
+
+        // Frequency pattern
+        if (count($tickets) >= 3) {
+            $intervals = array();
+            for ($i = 1; $i < count($tickets); $i++) {
+                $prev = strtotime($tickets[$i]['createdTime']);
+                $curr = strtotime($tickets[$i-1]['createdTime']);
+                $intervals[] = ($curr - $prev) / 86400; // Days between tickets
+            }
+            $avg_interval = array_sum($intervals) / count($intervals);
+
+            if ($avg_interval < 7) {
+                WP_CLI::warning("⚠️  High frequency customer - contacts every " . round($avg_interval, 1) . " days");
+            } elseif ($avg_interval < 30) {
+                WP_CLI::line("📅 Regular customer - contacts every " . round($avg_interval, 1) . " days");
+            } else {
+                WP_CLI::line("📅 Occasional customer - contacts every " . round($avg_interval, 1) . " days");
+            }
+        }
+
+        // Priority patterns
+        if (!empty($stats['priorities'])) {
+            $high_priority = $stats['priorities']['High'] ?? 0;
+            if ($high_priority > $stats['total_tickets'] * 0.3) {
+                WP_CLI::warning("🔥 Tends to report high-priority issues (" .
+                               round($high_priority / $stats['total_tickets'] * 100) . "% high priority)");
+            }
+        }
+
+        // Common issues
+        $keywords = array();
+        foreach ($tickets as $ticket) {
+            $text = strtolower($ticket['subject'] . ' ' . ($ticket['description'] ?? ''));
+
+            // Common issue keywords
+            $issue_keywords = array('error', 'bug', 'broken', 'not working', 'crash',
+                                  'slow', 'failed', 'issue', 'problem', 'help');
+
+            foreach ($issue_keywords as $keyword) {
+                if (strpos($text, $keyword) !== false) {
+                    $keywords[$keyword] = ($keywords[$keyword] ?? 0) + 1;
+                }
+            }
+        }
+
+        if (!empty($keywords)) {
+            arsort($keywords);
+            WP_CLI::line("\n🔍 Common Keywords:");
+            foreach (array_slice($keywords, 0, 5) as $keyword => $count) {
+                $percentage = round($count / count($tickets) * 100);
+                WP_CLI::line("   • \"$keyword\": appears in $percentage% of tickets");
+            }
+        }
+
+        // Resolution success
+        if ($stats['closed_tickets'] > 0 && $stats['total_tickets'] > 0) {
+            $resolution_rate = round($stats['closed_tickets'] / $stats['total_tickets'] * 100);
+            WP_CLI::line("\n✅ Resolution Rate: $resolution_rate% of tickets resolved");
+        }
+
+        // Recommendations
+        WP_CLI::log("\n💡 Recommendations:");
+
+        if ($stats['open_tickets'] > 3) {
+            WP_CLI::line("   • Customer has " . $stats['open_tickets'] . " open tickets - consider priority support");
+        }
+
+        if ($stats['average_resolution_time'] > 48) {
+            WP_CLI::line("   • Long resolution time - may need escalation or specialist attention");
+        }
+
+        $total_interactions = count($tickets);
+        if ($total_interactions > 10) {
+            WP_CLI::line("   • Frequent customer (" . $total_interactions . " tickets) - consider proactive outreach");
+        }
+    }
+
+    private function get_status_emoji($status) {
+        $status_map = array(
+            'Open' => '🔵',
+            'On Hold' => '🟡',
+            'Escalated' => '🔴',
+            'Closed' => '✅',
+            'default' => '⚪'
+        );
+
+        return $status_map[$status] ?? $status_map['default'];
     }
 
     /**
@@ -1339,7 +1713,7 @@ class ZDM_CLI_Commands {
     // ANALYSIS HELPER METHODS
     // =================================================================
 
-    private function generate_fallback_response($ticket_data, $tone = 'professional') {
+    private function generate_fallback_response($ticket_data, $tone = 'professional', $customer_context = array()) {
         $customer_name = $ticket_data['contact']['firstName'] ?? 'Valued Customer';
         $subject = $ticket_data['subject'] ?? 'your inquiry';
 
@@ -1357,9 +1731,19 @@ class ZDM_CLI_Commands {
         }
 
         $greeting = ($tone == 'friendly') ? "Hi $customer_name!" : "Dear $customer_name,";
-        $thanks = ($tone == 'empathetic') ?
-            "Thank you for reaching out to us. We understand how important this is to you." :
-            "Thank you for contacting us regarding $subject.";
+
+        // Customize greeting for returning customers
+        if (!empty($customer_context['is_new_customer']) && !$customer_context['is_new_customer']) {
+            if (!empty($customer_context['has_similar_issues'])) {
+                $thanks = "Thank you for getting back to us. We see you're experiencing a similar issue, and we're here to help resolve it completely this time.";
+            } else {
+                $thanks = "Thank you for reaching out to us again. We appreciate your continued trust in our support.";
+            }
+        } else {
+            $thanks = ($tone == 'empathetic') ?
+                "Thank you for reaching out to us. We understand how important this is to you." :
+                "Thank you for contacting us regarding $subject.";
+        }
 
         $response = "$greeting\n\n";
         $response .= "$thanks\n\n";
@@ -1692,6 +2076,7 @@ WP_CLI::add_command('zdm', 'ZDM_CLI_Commands');
 WP_CLI::add_command('zdm analyze', array('ZDM_CLI_Commands', 'analyze'));
 WP_CLI::add_command('zdm draft', array('ZDM_CLI_Commands', 'draft'));
 WP_CLI::add_command('zdm batch-draft', array('ZDM_CLI_Commands', 'batch_draft'));
+WP_CLI::add_command('zdm customer', array('ZDM_CLI_Commands', 'customer'));
 WP_CLI::add_command('zdm ticket', array('ZDM_CLI_Commands', 'ticket'));
 WP_CLI::add_command('zdm template', array('ZDM_CLI_Commands', 'template'));
 WP_CLI::add_command('zdm monitor', array('ZDM_CLI_Commands', 'monitor'));

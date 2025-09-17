@@ -733,6 +733,156 @@ class ZDM_Zoho_API {
     }
 
     /**
+     * Get all tickets for a specific customer by email or contact ID
+     */
+    public function get_customer_tickets($customer_identifier, $params = array()) {
+        $access_token = $this->get_access_token();
+        $org_id = get_option('zdm_org_id');
+
+        if (empty($access_token) || empty($org_id)) {
+            return false;
+        }
+
+        // Default parameters
+        $default_params = array(
+            'limit' => 100,  // Increased to fetch more tickets
+            'sortBy' => '-createdTime', // Most recent first
+            'include' => 'contacts'
+        );
+
+        $params = array_merge($default_params, $params);
+
+        // Check if identifier is email or contact ID
+        if (strpos($customer_identifier, '@') !== false) {
+            // It's an email - we need to search across all tickets
+            // Use max allowed limit
+            $params['limit'] = 100;  // API max limit per request
+            unset($params['status']); // Search all statuses when looking by email
+        } else {
+            // It's a contact ID
+            $params['contactId'] = $customer_identifier;
+        }
+
+        $url = $this->api_base_url . '/tickets?' . http_build_query($params);
+
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'Authorization' => 'Zoho-oauthtoken ' . $access_token,
+                'orgId' => $org_id
+            ),
+            'timeout' => 30
+        ));
+
+        if (!is_wp_error($response)) {
+            $code = wp_remote_retrieve_response_code($response);
+            if ($code == 200) {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+
+                // Filter by email if needed (client-side)
+                if (strpos($customer_identifier, '@') !== false && isset($data['data'])) {
+                    $filtered_tickets = array();
+                    foreach ($data['data'] as $ticket) {
+                        if (strcasecmp($ticket['email'] ?? '', $customer_identifier) === 0) {
+                            $filtered_tickets[] = $ticket;
+                        }
+                    }
+                    $data['data'] = $filtered_tickets;
+                }
+
+                // Add summary statistics
+                if (isset($data['data']) && is_array($data['data'])) {
+                    $stats = $this->calculate_customer_stats($data['data']);
+                    $data['stats'] = $stats;
+                }
+
+                return $data;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Calculate customer statistics from ticket history
+     */
+    public function calculate_customer_stats($tickets) {
+        $stats = array(
+            'total_tickets' => count($tickets),
+            'open_tickets' => 0,
+            'closed_tickets' => 0,
+            'average_resolution_time' => 0,
+            'categories' => array(),
+            'products' => array(),
+            'priorities' => array(),
+            'first_ticket_date' => null,
+            'last_ticket_date' => null,
+            'most_recent_interaction' => null
+        );
+
+        $resolution_times = array();
+
+        foreach ($tickets as $ticket) {
+            // Status counts
+            $status = strtolower($ticket['status'] ?? '');
+            if (in_array($status, array('open', 'on hold', 'escalated'))) {
+                $stats['open_tickets']++;
+            } elseif ($status === 'closed') {
+                $stats['closed_tickets']++;
+            }
+
+            // Categories/departments
+            if (!empty($ticket['departmentId'])) {
+                $dept = $ticket['department']['name'] ?? $ticket['departmentId'];
+                $stats['categories'][$dept] = ($stats['categories'][$dept] ?? 0) + 1;
+            }
+
+            // Products
+            if (!empty($ticket['productId'])) {
+                $product = $ticket['product']['productName'] ?? $ticket['productId'];
+                $stats['products'][$product] = ($stats['products'][$product] ?? 0) + 1;
+            }
+
+            // Priorities
+            $priority = $ticket['priority'] ?? 'Medium';
+            $stats['priorities'][$priority] = ($stats['priorities'][$priority] ?? 0) + 1;
+
+            // Date tracking
+            $created = strtotime($ticket['createdTime'] ?? '');
+            if ($created) {
+                if (!$stats['first_ticket_date'] || $created < strtotime($stats['first_ticket_date'])) {
+                    $stats['first_ticket_date'] = $ticket['createdTime'];
+                }
+                if (!$stats['last_ticket_date'] || $created > strtotime($stats['last_ticket_date'])) {
+                    $stats['last_ticket_date'] = $ticket['createdTime'];
+                }
+            }
+
+            // Resolution time (for closed tickets)
+            if ($status === 'closed' && !empty($ticket['closedTime']) && !empty($ticket['createdTime'])) {
+                $created = strtotime($ticket['createdTime']);
+                $closed = strtotime($ticket['closedTime']);
+                if ($created && $closed) {
+                    $resolution_times[] = ($closed - $created) / 3600; // In hours
+                }
+            }
+
+            // Most recent interaction
+            $modified = strtotime($ticket['modifiedTime'] ?? '');
+            if ($modified && (!$stats['most_recent_interaction'] || $modified > strtotime($stats['most_recent_interaction']))) {
+                $stats['most_recent_interaction'] = $ticket['modifiedTime'];
+            }
+        }
+
+        // Calculate average resolution time
+        if (!empty($resolution_times)) {
+            $stats['average_resolution_time'] = round(array_sum($resolution_times) / count($resolution_times), 1);
+        }
+
+        return $stats;
+    }
+
+    /**
      * Get all available tags in the organization
      */
     public function get_ticket_tags() {
