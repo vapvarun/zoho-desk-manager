@@ -596,8 +596,8 @@ class ZDM_CLI_Commands {
      * [--tone=<tone>]
      * : Response tone: professional, friendly, empathetic (default: professional)
      *
-     * [--include-threads]
-     * : Include full conversation history in context
+     * [--skip-threads]
+     * : Skip reading conversation history (threads are included by default)
      *
      * [--auto-tag]
      * : Automatically tag the ticket based on content
@@ -624,7 +624,8 @@ class ZDM_CLI_Commands {
         $ai_provider = WP_CLI\Utils\get_flag_value($assoc_args, 'ai-provider', null);
         $template_key = WP_CLI\Utils\get_flag_value($assoc_args, 'template', null);
         $tone = WP_CLI\Utils\get_flag_value($assoc_args, 'tone', 'professional');
-        $include_threads = WP_CLI\Utils\get_flag_value($assoc_args, 'include-threads', false);
+        $skip_threads = WP_CLI\Utils\get_flag_value($assoc_args, 'skip-threads', false);
+        $include_threads = !$skip_threads;  // Include threads by default unless explicitly skipped
         $auto_tag = WP_CLI\Utils\get_flag_value($assoc_args, 'auto-tag', false);
 
         WP_CLI::log("🤖 Generating AI draft for ticket #$ticket_id...");
@@ -684,13 +685,23 @@ class ZDM_CLI_Commands {
             }
         }
 
-        // Fetch conversation threads if requested
+        // Fetch conversation threads (now by default)
         $threads = array();
         if ($include_threads) {
-            WP_CLI::log("📚 Including conversation history...");
+            WP_CLI::log("📚 Reading full conversation history...");
             $thread_data = $api->get_ticket_threads($ticket_id);
             if ($thread_data && isset($thread_data['data'])) {
                 $threads = $thread_data['data'];
+                $thread_count = count($threads);
+                WP_CLI::line("   Found $thread_count messages in conversation");
+
+                // Show brief summary of conversation
+                if ($thread_count > 0) {
+                    $latest = $threads[0];
+                    $author_type = $latest['author']['type'] ?? 'UNKNOWN';
+                    $preview = substr(strip_tags($latest['content'] ?? $latest['summary'] ?? ''), 0, 100);
+                    WP_CLI::line("   Latest: [$author_type] " . $preview . "...");
+                }
             }
         }
 
